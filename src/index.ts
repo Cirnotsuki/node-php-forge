@@ -20,6 +20,8 @@ import { log } from './utils/logger';
 import { BuildContext, BuildOption } from './core/buildOption';
 import phpClass from './lib/php-class';
 
+export * as PhpParser from 'php-parser'
+
 export default async function (entryDir: string, distDir: string, options: BuildOption) {
 	const buildContext = new BuildContext(entryDir, distDir, options);
 

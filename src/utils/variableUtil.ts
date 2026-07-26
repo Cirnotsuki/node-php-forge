@@ -145,19 +145,6 @@ function traceAssignNode(node: AstNode) {
 
 }
 
-class AssginTree {
-	items = new Array<AssginTree>();
-	constructor(assginRight: AstNode) {
-		if (isKind(assginRight, 'variable')) {
-			const record = assginRight.lookup();
-			if (record && record instanceof RecordVariable) {
-				if (isKind(record.node.parent, 'assign')) {
-					this = new AssginTree(record.node.parent.right as AstNode);
-				}
-			}
-		}
-	}
-}
 
 export function getAssignDeepType(node: AstNode, keys: string[]) {
 	const assignNode = findAssignNode(node);

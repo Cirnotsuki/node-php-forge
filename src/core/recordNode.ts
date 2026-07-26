@@ -3,6 +3,7 @@ import { AstNode } from '../types';
 import PHPParser from 'php-parser';
 import { analysisType, getVariableType } from '../utils/variableUtil';
 import { isKind } from '../utils/typeGard';
+import { AstType } from './astType';
 
 type DefineNode = AstNode<PHPParser.Variable> | AstNode<PHPParser.Identifier>;
 
@@ -63,8 +64,8 @@ export class RecordVariable extends RecordBase {
 		this._replace = '$' + node.name;
 	}
 
-	get type(): string {
-		return getVariableType(this);
+	get type(): AstType {
+		return AstType.factory(this);
 	}
 }
 

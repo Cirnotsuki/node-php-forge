@@ -54,9 +54,7 @@ export default async function (buildContext: BuildContext) {
 				return;
 			}
 			if (isKind(node, 'variable')) {
-				if (keys.length > 0) {
-					node.setAttribute('assginKey', keys.join(','));
-				}
+				node.setAttribute('assignKey', JSON.stringify(keys));
 				recordVariable(node);
 				return;
 			}
