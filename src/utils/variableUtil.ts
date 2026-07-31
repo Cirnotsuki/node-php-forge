@@ -2,18 +2,11 @@ import { Ast } from '../core/ast';
 import { RecordVariable } from '../core/recordNode';
 import { Runtime } from '../core/runtime';
 import { AnyAstNode, AstNode } from '../types';
+import { getNodeName } from './helper';
 import { isKind } from './typeGard';
 import PhpParser from 'php-parser';
 
-export function getNodeName(nameNode: PhpParser.Node | PhpParser.Identifier | string) {
-	if (typeof nameNode === 'string') {
-		return nameNode;
-	}
-	if (isKind(nameNode, 'identifier')) {
-		return nameNode.name;
-	}
-	return '';
-}
+
 
 export function getReturnType(
 	node: AstNode<PhpParser.Function | PhpParser.Method | PhpParser.Closure>,

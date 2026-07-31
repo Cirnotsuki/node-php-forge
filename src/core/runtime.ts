@@ -1,10 +1,12 @@
 import path from 'path';
 import fs from 'fs';
-import { ENTRIES } from '../config/constans';
+import { ENTRIES, PACKAGE_REPLACEMENT } from '../config/constans';
 import logger from '../utils/logger';
 import config from '../../config';
 import { Ast } from './ast';
 import { BuildOption } from './buildOption';
+import { toPhpBinary } from '../utils/helper';
+import { base64ToArrayBuffer } from '@ka-libs/crypto';
 
 export class Runtime {
 	private static _sourceDir = '';
@@ -27,6 +29,9 @@ export class Runtime {
 	static sourceRoot: string;
 	static DEBUG = config.debug;
 	static options: BuildOption = new BuildOption();
+
+	static publicKey: string = '';
+	static privateKey: string = '';
 
 	static AstCache = new Map<string, Ast>();
 
@@ -55,5 +60,12 @@ export class Runtime {
 
 	static get entryFile() {
 		return this._entryFile;
+	}
+
+	static get replacement() {
+		return {
+			...PACKAGE_REPLACEMENT,
+			KA_PRIVATE_KEY: this.privateKey.replace(/\n/g, '\\n'),
+		};
 	}
 }

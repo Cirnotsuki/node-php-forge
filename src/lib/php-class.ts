@@ -2,63 +2,30 @@ import { uuidv4 } from '@ka-libs/crypto';
 import { Runtime } from '../core/runtime';
 import { Ast } from '../core/ast';
 import { BuildClass, BuildContext } from '../core/buildOption';
-import { RecordVariable, RecordFunction, RecordNode } from '../core/recordNode';
-import { isKind } from '../utils/typeGard';
+import {
+	RecordVariable,
+	RecordFunction,
+	RecordIdentifier,
+	RecordProperty,
+	RecordClass,
+	RecordMethod,
+	RecordConstant,
+} from '../core/recordNode';
+import { isKind, typedAstNode } from '../utils/typeGard';
 import { fileIterator, scanPHPFile } from '../utils/utils';
 import { CONST_PREFIX } from '../config/constans';
 import { AstNode } from '../types';
 import PhpParser from 'php-parser';
 import { randomPrefix } from '../utils/randomPrefix';
+import { generateConstantName, generateVariableName, getNodeName } from '../utils/helper';
+import { findSelfBuildClass, findBuildClass } from '../utils/pipeUtil';
 
 export default async function (buildContext: BuildContext) {
 	const ROOT_DIR = buildContext.distDir;
-	const classes = buildContext.classes;
-
-	function generateClassName() {
-		const hash = uuidv4(true);
-		return CONST_PREFIX + hash.slice(-6);
-	}
-
-	function generateName() {
-		const hash = uuidv4(true);
-		return randomPrefix().slice(1, 3) + hash.slice(-6);
-	}
-
-	function findBuildClass(name: string | AstNode) {
-		if (!name) return;
-
-		if (typeof name === 'string') {
-			return classes.get(name);
-		}
-
-		return classes.get(name.name);
-	}
-
-	function findSelfBuildClass(node: AstNode) {
-		let parent = node.parent;
-
-		while (parent) {
-			if (isKind(parent, 'class')) {
-				break;
-			}
-			parent = parent.parent;
-		}
-
-		if (parent) {
-			try {
-				return findBuildClass(parent.name);
-			} catch (error) {
-				console.error(error);
-				parent.trace();
-			}
-		}
-	}
+	const classes = Runtime.options.classes;
 
 	await fileIterator(await scanPHPFile(ROOT_DIR), async (file) => {
-		if (!Runtime.currentFile.includes('test.php')) return;
-
 		const ast = Ast.create(file);
-		console.log(ast);
 
 		// 记录所有类
 		ast.walk((node) => {
@@ -66,7 +33,7 @@ export default async function (buildContext: BuildContext) {
 			if (isKind(node.parent, 'class')) {
 				if (!node.name) return;
 
-				const classRecord = new RecordNode(node, generateClassName());
+				const classRecord = new RecordClass(node, generateConstantName());
 				classes.set(node.name, new BuildClass(classRecord));
 				return;
 			}
@@ -75,7 +42,7 @@ export default async function (buildContext: BuildContext) {
 				const buildClass = findSelfBuildClass(node);
 				if (!buildClass) return;
 
-				const methodRecord = new RecordFunction(node, generateName());
+				const methodRecord = new RecordMethod(node.parent, generateVariableName(), buildClass.name);
 				buildClass.methods.set(node.name, methodRecord);
 				return;
 			}
@@ -84,8 +51,21 @@ export default async function (buildContext: BuildContext) {
 				const buildClass = findSelfBuildClass(node);
 				if (!buildClass) return;
 
-				const propertyRecord = new RecordVariable(node, generateName());
+				const propertyRecord = new RecordProperty(node, generateVariableName(), buildClass.name);
 				buildClass.properties.set(node.name, propertyRecord);
+				return;
+			}
+
+			if (isKind(node.parent, 'constant') && isKind(node.parent.parent, 'classconstant')) {
+				const buildClass = findSelfBuildClass(node);
+				if (!buildClass) return;
+
+				const constantRecord = new RecordConstant(
+					node,
+					generateVariableName().toUpperCase(),
+					buildClass.name,
+				);
+				buildClass.constants.set(node.name, constantRecord);
 				return;
 			}
 		});
@@ -110,15 +90,14 @@ export default async function (buildContext: BuildContext) {
 		// ast.applyReplacements();
 	});
 
-	// 记录替换
+	// 记录替换，只处理静态属性
 	await fileIterator(await scanPHPFile(ROOT_DIR), async (file) => {
-		if (!Runtime.currentFile.includes('test.php')) return;
-
 		const ast = Ast.create(file);
 
 		ast.walk((node) => {
 			if (isKind(node, 'name')) {
 				const buildClass = findBuildClass(node.name);
+
 				if (!buildClass) return;
 
 				ast.recordReplacement(node, buildClass.name.replace);
@@ -127,17 +106,19 @@ export default async function (buildContext: BuildContext) {
 
 			// 处理变量
 			if (!isKind(node, 'identifier') && !isKind(node, 'variable')) return;
-			if (node.record && node.record instanceof RecordVariable) {
-				console.log(node.record.type);
-			}
+
 			if (isKind(node.parent, 'class')) {
 				const buildClass = findBuildClass(node.name);
 				if (!buildClass) return;
 
 				ast.recordReplacement(node, buildClass.name.replace);
+
+				return;
 			}
 
 			if (isKind(node.parent, 'method')) {
+				if (!node.parent.isStatic) return;
+
 				const buildClass = findSelfBuildClass(node);
 				if (!buildClass) return;
 
@@ -149,42 +130,52 @@ export default async function (buildContext: BuildContext) {
 				return;
 			}
 
-			if (isKind(node.parent, 'property')) {
+			if (isKind(node.parent, 'property') && isKind(node.parent.parent, 'propertystatement')) {
+				if (!node.parent.parent.isStatic) return;
+
 				const buildClass = findSelfBuildClass(node);
 				if (!buildClass) return;
 
 				const record = buildClass.properties.get(node.name);
 				if (!record) return;
-
-				ast.recordReplacement(node, '$' + record.replace);
+				ast.recordReplacement(node, record.replace);
 				return;
 			}
 
-			if (!Runtime.currentFile.includes('test.php')) return;
-
-			if (isKind(node.parent, 'staticlookup')) {
-				const name = node.parent.what;
-
-				let buildClass;
-				if (isKind(name, 'name')) {
-					buildClass = findBuildClass(name);
-				}
-
-				if (isKind(name, 'selfreference')) {
-					buildClass = findSelfBuildClass(name);
-				}
-
+			if (isKind(node.parent, 'constant') && isKind(node.parent.parent, 'classconstant')) {
+				const buildClass = findSelfBuildClass(node);
 				if (!buildClass) return;
 
-				const record = buildClass.properties.get(node.name);
+				const record = buildClass.constants.get(node.name);
 				if (!record) return;
-
-				ast.recordReplacement(node, '$' + record.replace);
+				ast.recordReplacement(node, record.replace);
 				return;
 			}
 
-			if (isKind(node.parent, 'propertylookup')) {
-				// node.trace();
+			if (isKind(node.parent, 'staticlookup')) {
+				const what = typedAstNode(node.parent.what);
+
+				const buildClass = findBuildClass(what);
+				if (!buildClass) return;
+
+				if (isKind(node.parent.parent, 'call')) {
+					const record = buildClass.methods.get(node.name);
+					if (record) {
+						ast.recordReplacement(node, record.replace);
+						return;
+					}
+				}
+
+				if (buildClass.properties.has(node.name)) {
+					const record = buildClass.properties.get(node.name)!;
+					ast.recordReplacement(node, record.replace);
+				}
+
+				if (buildClass.constants.has(node.name)) {
+					const record = buildClass.constants.get(node.name)!;
+					ast.recordReplacement(node, record.replace);
+				}
+				return;
 			}
 		});
 	});

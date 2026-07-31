@@ -3,10 +3,8 @@ import path from 'path';
 import { MAP_DIR } from './config/constans';
 
 import phpMerge from './lib/php-merge';
-import phpHooks from './lib/php-hooks';
 import phpOptimize from './lib/php-optimize';
 import phpDefine from './lib/php-define';
-import phpString from './lib/php-string-ast';
 import phpStringAst from './lib/php-string-ast';
 import phpFunction from './lib/php-function';
 
@@ -19,8 +17,9 @@ import { Runtime } from './core/runtime';
 import { log } from './utils/logger';
 import { BuildContext, BuildOption } from './core/buildOption';
 import phpClass from './lib/php-class';
+import phpFinnally from './lib/php-finnally';
 
-export * as PhpParser from 'php-parser'
+export * as PhpParser from 'php-parser';
 
 export default async function (entryDir: string, distDir: string, options: BuildOption) {
 	const buildContext = new BuildContext(entryDir, distDir, options);
@@ -46,10 +45,10 @@ export default async function (entryDir: string, distDir: string, options: Build
 		await phpClass(buildContext);
 
 		Runtime.period = 'function';
-		// await phpFunction(buildContext);
+		await phpFunction(buildContext);
 
-		Runtime.period = 'hooks';
-		//   await phpHooks(buildContext);
+		Runtime.period = 'finnally';
+		await phpFinnally(buildContext);
 
 		Runtime.period = 'string';
 		await phpStringAst(buildContext);

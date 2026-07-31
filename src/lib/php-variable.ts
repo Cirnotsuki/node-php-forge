@@ -5,43 +5,53 @@ import PHPParser from 'php-parser';
 import { randomPrefix } from '../utils/randomPrefix';
 import { AstNode, AnyAstNode, ScopeNode } from '../types';
 import { RESERVED, VARIABLE_OPT } from '../config/constans';
-import { isKind, isScopeNode } from '../utils/typeGard';
+import { isKind, isScopeNode, typedAstNode } from '../utils/typeGard';
 import { fileIterator, normalizePath, scanPHPFile } from '../utils/utils';
 import logger from '../utils/logger';
 import { Runtime } from '../core/runtime';
 import { Ast } from '../core/ast';
 import { RecordVariable } from '../core/recordNode';
 import { BuildContext } from '../core/buildOption';
-import { getNodeName } from '../utils/variableUtil';
+import { getNodeName } from '../utils/helper';
+import { PhpParser } from '..';
 
 export default async function (buildContext: BuildContext) {
 	const variables = buildContext.variables;
 	const ROOT_DIR = buildContext.distDir;
 
-	function recordVariable(node: AstNode, replace?: string): void;
-	function recordVariable(node: AstNode, source?: RecordVariable | null): void;
-	function recordVariable(node: AstNode, arg: string | RecordVariable | null = null) {
+	function recordVariable(
+		node: AstNode<PhpParser.Variable | PhpParser.Identifier>,
+		replace?: string,
+	): void;
+	function recordVariable(
+		node: AstNode<PhpParser.Variable | PhpParser.Identifier>,
+		source?: RecordVariable | null,
+	): void;
+	function recordVariable(
+		node: AstNode<PhpParser.Variable | PhpParser.Identifier>,
+		arg: string | RecordVariable | null = null,
+	) {
 		if (node.name.length <= VARIABLE_OPT.MIX_NAME_LENGTH) return;
 
 		const record = node.lookup();
 
 		if (record) {
-			record.resigns.push(node);
+			record.references.push(node);
 			return;
 		}
 
 		if (arguments.length === 1) {
 			const uuid = uuidv4(true);
-			node.scope.setCache(node.name, new RecordVariable(node, randomPrefix() + uuid.slice(-4)));
+			node.scope.setCache(new RecordVariable(node, randomPrefix() + uuid.slice(-4)), node.name);
 			return;
 		}
 
 		if (typeof arg === 'string') {
-			node.scope.setCache(node.name, new RecordVariable(node, arg));
+			node.scope.setCache(new RecordVariable(node, arg), node.name);
 			return;
 		}
 
-		node.scope.setCache(node.name, new RecordVariable(node, arg));
+		node.scope.setCache(new RecordVariable(node, arg), node.name);
 	}
 
 	function assignLeftIterator(left: AstNode) {
@@ -70,6 +80,11 @@ export default async function (buildContext: BuildContext) {
 			if (!node.parent) return;
 			if (isKind(node, 'assign')) {
 				assignLeftIterator(node.left as AstNode);
+				return;
+			}
+
+			if (isKind(node, 'staticvariable')) {
+				recordVariable(typedAstNode(node.variable));
 				return;
 			}
 
@@ -111,8 +126,9 @@ export default async function (buildContext: BuildContext) {
 
 		ast.walk((node: AstNode) => {
 			if (!isKind(node, 'variable') && !isKind(node, 'identifier')) return;
-			// 跳过所有和类相关的实现
-			if (isKind(node.parent, 'class')) return;
+			if (isKind(node.parent, 'class'))
+				// 跳过所有和类相关的实现
+				return;
 			if (isKind(node.parent, 'function')) return;
 			if (isKind(node.parent, 'method')) return;
 			if (isKind(node.parent, 'property')) return;
@@ -120,8 +136,9 @@ export default async function (buildContext: BuildContext) {
 			if (isKind(node.parent, 'propertylookup') && node.getAttribute('source') !== 'what') return;
 			if (isKind(node.parent, 'staticlookup')) return;
 
-			// 查找 global 和 use
 			let record = node.lookup();
+			
+			// 查找 global 和 use
 			if (isKind(node.parent, 'global')) {
 				// global 已经定义过了，所以从外面一层找是否有定义
 				record = node.scope.lookup(null, node.name);
@@ -139,7 +156,11 @@ export default async function (buildContext: BuildContext) {
 			}
 
 			if (record) {
-				ast.recordReplacement(node, record.replace);
+				if ((node as any).byref) {
+					node.recordReplacement('&' + record.replace);
+				} else {
+					node.recordReplacement(record.replace);
+				}
 			}
 		});
 

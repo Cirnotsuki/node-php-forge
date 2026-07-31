@@ -16,8 +16,12 @@ export function isScopeNode(node: AstNode | ScopeNode | null): node is ScopeNode
 		isKind(node, 'method') ||
 		isKind(node, 'closure') ||
 		isKind(node, 'block') ||
-		isKind(node, 'class') 
+		isKind(node, 'class')
 	);
+}
+
+export function typedAstNode(node: PhpParser.Node) {
+	return node as AstNode<typeof node>;
 }
 
 export * as typeGard from './typeGard';

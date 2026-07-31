@@ -2,15 +2,15 @@ import phpMerge from '..';
 import fs from 'fs';
 import path from 'path';
 import { mkdirp } from 'mkdirp';
-import { uuidv4 } from '@ka-libs/crypto/uuidv4';
 
 import logger from '../utils/logger';
 import { Runtime } from '../core/runtime';
 import { MAP_DIR } from '../config/constans';
-import { BuildOption } from '../core/buildOption';
+import { BuildContext, BuildOption } from '../core/buildOption';
 import { normalizePath } from '../utils/utils';
-import { RecordBase, RecordNode } from '../core/recordNode';
-
+import { RecordBase } from '../core/recordNode';
+import { arrayBufferToBase64, keyPairs } from '@ka-libs/crypto';
+import { getNodeName, toPhpBinary } from '../utils/helper';
 export default async function (
 	buildDirs: string[],
 	pathes: { source: string; dist: string },
@@ -23,6 +23,13 @@ export default async function (
 	Runtime.distRoot = pathes.dist;
 	Runtime.sourceRoot = pathes.source;
 	Runtime.options = buildOption;
+
+	[Runtime.publicKey, Runtime.privateKey] = await keyPairs();
+
+	// const [publicKey, privateKey] = await keyPairs('der');
+
+	// Runtime.privateKey = arrayBufferToBase64(privateKey);
+	// Runtime.publicKey = arrayBufferToBase64(publicKey);
 
 	for (const dir of buildDirs) {
 		const source = path.join(pathes.source, dir);
@@ -43,72 +50,98 @@ export default async function (
 
 	mkdirp.sync(jsonDir);
 
-	const json = JSON.stringify(
-		buildOption,
-		function (key, value) {
-			if (key === 'entryDir') {
-				return undefined;
-			}
-			if (key === 'distDir') {
-				return normalizePath(path.relative(Runtime.distRoot, value));
-			}
-			if (key === 'runtime') {
-				return undefined;
-			}
-			if (key === 'options') {
-				return undefined;
-			}
-			if (key === 'classes' && value instanceof Map) {
-				return Array.from(value, ([className, value]) => ({
-					className,
-					...value,
-				}));
-			}
-			if (value instanceof Map) {
-				if (value.size === 0) {
+	console.log(buildOption);
+
+	try {
+		const options = { ...buildOption } as any;
+		delete options.hooks;
+		options.classes = Object.fromEntries(
+			Array.from(buildOption.classes).map(([key, value]) => {
+				return [
+					key,
+					{
+						replace: value.name.replace,
+						location: normalizePath(path.relative(Runtime.distRoot, value.name.location)),
+						methods: value.methods,
+						properties: value.properties,
+					},
+				];
+			}),
+		);
+
+		options.constants = Object.fromEntries(buildOption.constants.entries());
+
+		options.contexts.forEach((context: any, index: number) => {
+			delete context.classes;
+			delete context.entryDir;
+			context.distDir = normalizePath(path.relative(Runtime.distRoot, context.distDir));
+
+			delete context.runtime;
+			delete context.options;
+			delete context.guid;
+			delete context.date;
+			delete context.time;
+
+			context.strings = Object.fromEntries(
+				Array.from(context.strings as BuildContext['strings'])
+					.sort(([_a, a], [_b, b]) => b - a)
+					.map(([key, val]) => [val, key]),
+			);
+		});
+
+		const json = JSON.stringify(
+			options,
+			function (key, value) {
+				if (value instanceof Map) {
+					if (value.size === 0) {
+						return undefined;
+					}
+					return Array.from(value).map(([_, val]) => val);
+				}
+
+				if (value instanceof RecordBase) {
+					return {
+						name: getNodeName(value.node.name),
+						replace: value.replace,
+						location: normalizePath(path.relative(Runtime.distRoot, value.location)),
+					};
+				}
+
+				if (typeof value === 'object' && value && Object.keys(value).length === 0) {
 					return undefined;
 				}
-				return Array.from(value, ([key, value]) => ({ key, value }));
-			}
+				if (Array.isArray(value) && value.length === 0) {
+					return undefined;
+				}
 
-			if (value instanceof RecordBase) {
-				return {
-					name: value.node.name,
-					value: value.replace,
-					location: normalizePath(path.relative(Runtime.distRoot, value.location)),
-				};
-			}
-			if (Array.isArray(value) && value.length === 0) {
-				return undefined;
-			}
+				return value;
+			},
+			2,
+		);
 
-			if (typeof value === 'object' && value && Object.keys(value).length === 0) {
-				return undefined;
-			}
+		fs.writeFileSync(path.join(jsonDir, buildOption.guid + '.json'), json);
 
-			return value;
-		},
-		2,
-	);
+		Runtime.DEBUG = true;
 
-	fs.writeFileSync(path.join(jsonDir, buildOption.guid + '.json'), json);
-
-	Runtime.DEBUG = true;
-
-	logger.log(
-		'所有任务均已完成：',
-		JSON.parse(
-			JSON.stringify(
-				JSON.parse(json),
-				function (key, value) {
-					if (key === 'contexts' || key === 'classes') return value;
-					if (value instanceof Array) {
-						return value.length;
-					}
-					return value;
-				},
-				2,
+		logger.log(
+			'所有任务均已完成：',
+			JSON.parse(
+				JSON.stringify(
+					JSON.parse(json),
+					function (key, value) {
+						if (key === 'classes') return Object.keys(value).length;
+						if (key === 'contexts') return value;
+						if (key === 'strings') return Object.keys(value).length;
+						if (value instanceof Array) {
+							return value.length;
+						}
+						return value;
+					},
+					2,
+				),
 			),
-		),
-	);
+		);
+	} catch (error) {
+		console.error(error);
+	}
 }

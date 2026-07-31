@@ -1,5 +1,13 @@
-import uuidv4 from '@ka-libs/crypto/uuidv4';
-import { RecordFunction, RecordNode } from './recordNode';
+import { uuidv4 } from '@ka-libs/crypto';
+import {
+	RecordClass,
+	RecordConstant,
+	RecordFunction,
+	RecordIdentifier,
+	RecordMethod,
+	RecordProperty,
+	RecordVariable,
+} from './recordNode';
 
 export class BuildOption {
 	date: string;
@@ -8,6 +16,10 @@ export class BuildOption {
 	replace: { [key: string]: string } = {};
 	classes = new Map<string, BuildClass>();
 	functions = new Map<string, RecordFunction>();
+	constants = new Map<string, string>();
+
+	hooks = new Set<string>();
+
 	contexts: BuildContext[] = [];
 
 	constructor(_opt?: any) {
@@ -22,11 +34,12 @@ export class BuildOption {
 }
 
 export class BuildClass {
-	name: RecordNode;
-	methods = new Map<string, RecordFunction>();
-	properties = new Map<string, RecordNode>();
+	name: RecordClass;
+	methods = new Map<string, RecordMethod>();
+	properties = new Map<string, RecordProperty>();
+	constants = new Map<string, RecordConstant>();
 
-	constructor(name: RecordNode) {
+	constructor(name: RecordIdentifier) {
 		this.name = name;
 	}
 }
@@ -37,7 +50,6 @@ export class BuildContext {
 
 	constants = new Map<string, string>();
 	functions = new Map<string, string>();
-	hooks = new Map<string, string>();
 
 	strings = new Map<string, number>();
 
@@ -61,25 +73,5 @@ export class BuildContext {
 		this.entryDir = entry;
 		this.distDir = dist;
 		this.options = options;
-	}
-
-	get replace() {
-		return this.options.replace;
-	}
-
-	get classes() {
-		return this.options.classes;
-	}
-
-	get date() {
-		return this.options.date;
-	}
-
-	get time() {
-		return this.options.time;
-	}
-
-	get guid() {
-		return this.options.guid;
 	}
 }

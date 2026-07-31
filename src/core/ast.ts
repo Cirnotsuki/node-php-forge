@@ -13,8 +13,9 @@ import { uuidv4 } from '@ka-libs/crypto';
 import { randomPrefix } from '../utils/randomPrefix';
 import { isKind, isScopeNode } from '../utils/typeGard';
 import { VARIABLE_OPT } from '../config/constans';
-import { RecordNode } from './recordNode';
+import { RecordBase, RecordFunction, RecordVariable } from './recordNode';
 import { fileURLToPath } from 'url';
+import { PhpParser } from '..';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 export class Ast {
@@ -26,8 +27,9 @@ export class Ast {
 	private attrMap = new WeakMap<AstNode, Map<string, string>>();
 
 	program: AstNode<PHPParser.Node> | null = null;
-	private scopeCache = new Map<ScopeNode, Map<string, RecordNode>>();
-	private recordCache = new WeakMap<AstNode, RecordNode>();
+	private scopeCache = new Map<ScopeNode, Map<string, RecordVariable>>();
+	private recordCache = new WeakMap<AstNode, RecordBase>();
+	private closureRecord = new Map<AstNode<PhpParser.Closure>, RecordFunction>();
 
 	constructor(phpFilePath: string, options: { [key: string]: any } = {}) {
 		this.phpFilePath = phpFilePath;
@@ -57,7 +59,9 @@ export class Ast {
 		try {
 			this.program = parser.parseCode(phpCode, phpFilePath) as unknown as AstNode;
 		} catch (err: any) {
-			logger.error(`❌ 解析失败: ${__filename}:${err.lineNumber}:${err.columnNumber}`);
+			logger.error(
+				`❌ 解析失败: ${this.tempFile}:${err.lineNumber}:${err.columnNumber}\n${err.message}`,
+			);
 		}
 
 		this.init(options.onInit);
@@ -114,9 +118,11 @@ export class Ast {
 				node.getCache = () => {
 					return this.getScopeCache(node);
 				};
-				node.setCache = (name, record) => {
+				node.setCache = (record, name) => {
 					this.recordCache.set(record.node, record);
-					return this.getScopeCache(node).set(name, record);
+					if (name && record instanceof RecordVariable) {
+						this.getScopeCache(node).set(name, record);
+					}
 				};
 				node.getRecord = (name: string) => {
 					return this.getScopeCache(node).get(name) ?? null;
@@ -218,8 +224,19 @@ export class Ast {
 	}
 
 	private lookupBoundary(scope: ScopeNode, level: number | null = 0): ScopeNode {
-		while ((level === null || level > 0 || isKind(scope, 'block')) && scope.parent) {
+		while (true) {
+			if (!scope.parent) break;
+
+			if (level === 0 && !isKind(scope, 'block')) {
+				break;
+			}
+
 			scope = scope.scope;
+
+			if (isKind(scope, 'block')) {
+				continue;
+			}
+
 			if (level !== null) {
 				level -= 1;
 			}
@@ -231,7 +248,7 @@ export class Ast {
 		node: AstNode | ScopeNode,
 		level: number | null = 0,
 		variableName?: string,
-	): RecordNode | null {
+	): RecordVariable | null {
 		let scope = node.scope;
 		const boundary = this.lookupBoundary(scope, level);
 		while (true) {

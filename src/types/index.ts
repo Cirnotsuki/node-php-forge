@@ -1,6 +1,6 @@
 import type PHPParser from 'php-parser';
 import type { Ast } from '../core/ast';
-import type { RecordBase } from '../core/recordNode';
+import type { RecordBase, RecordVariable } from '../core/recordNode';
 
 export interface AstReplacement {
 	start: number;
@@ -48,9 +48,9 @@ export type ScopeNode<
 		| PHPParser.Class,
 > = AstBaseNode<T> & {
 	scope: ScopeNode;
-	getRecord(name: string): RecordBase | null;
-	getCache(): Map<string, RecordBase>;
-	setCache(name: string, record: RecordBase): void;
+	getRecord(name: string): RecordVariable | null;
+	getCache(): Map<string, RecordVariable>;
+	setCache(record: RecordBase, name?: string): void;
 	boundary: (level?: number | null) => ScopeNode | null;
 };
 

@@ -3,6 +3,9 @@ import os from 'os';
 
 export default {
 	debug: false,
+	entryEncrypt: true,
+	stringPoolEncrypt: true,
+
 	prefix: 'KA_',
 
 	rootDir: path.resolve('./'),
@@ -11,7 +14,7 @@ export default {
 	excludes: ['vendor', 'node_modules', '.git', 'languages'],
 	reserved: ['languages'],
 
-	excludeString: ['/mu-plugins/decrypt.php', '/wp-load.php'],
+	excludeString: ['/mu-plugins/index.php', '/wp-load.php'],
 	external: [],
 	entries: ['functions.php', 'index.php'],
 

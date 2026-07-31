@@ -1,7 +1,7 @@
-import { encrypt, base64ToArrayBuffer } from '@ka-libs/crypto';
+import { encrypt, base64ToArrayBuffer, decrypt } from '@ka-libs/crypto';
 import path from 'path';
 import fs from 'fs';
-import { PUBLIC_KEY, STRING_OPT } from '../config/constans';
+import { PACKAGE_REPLACEMENT, STRING_OPT, STRING_POOL_ENCRYPT } from '../config/constans';
 import { Runtime } from '../core/runtime';
 import { AstNode } from '../types';
 import { isKind } from './typeGard';
@@ -9,24 +9,24 @@ import type PhpParser from 'php-parser';
 import logger from './logger';
 import { fileURLToPath } from 'url';
 import { BuildContext } from '../core/buildOption';
+import { getNodeName, phpString } from './helper';
+import { mkdirp } from 'mkdirp';
 const __filename = fileURLToPath(import.meta.url);
 
 const { ENABLE_STRING_POOL, ENABLE_POOL_COMPRESS, MIN_STRING_LENGTH } = STRING_OPT;
 
 export async function generateRuntimeCode(buildContext: BuildContext): Promise<string> {
-	const POOL_NAME = buildContext.pool;
 	const runtimeFunctionName = buildContext.runtime.stringPoolFunction;
 
 	const pool: Record<number, string> = {};
-	for (const [value, id] of buildContext.strings) {
+	for (const [value, id] of buildContext.strings.entries()) {
 		pool[id] = value;
 	}
 
-	const json = JSON.stringify(pool);
-	let runtimePoolCode: string;
+	let poolValue = phpString(JSON.stringify(pool));
 
-	if (ENABLE_POOL_COMPRESS) {
-		const result = await encrypt(json, PUBLIC_KEY);
+	if (STRING_POOL_ENCRYPT) {
+		const result = await encrypt(pool, Runtime.publicKey, false);
 		const valid = base64ToArrayBuffer(result!.valid);
 		const data = base64ToArrayBuffer(result!.data);
 
@@ -34,18 +34,14 @@ export async function generateRuntimeCode(buildContext: BuildContext): Promise<s
 		combined.set(new Uint8Array(valid), 0);
 		combined.set(new Uint8Array(data), 256);
 
-		const filePath = path.resolve(Runtime.distDir, './data.bin');
+		console.log(await decrypt(combined.buffer, Runtime.privateKey));
+
+		const filePath = path.resolve(Runtime.distDir, PACKAGE_REPLACEMENT.KA_STRING_POOL);
+		mkdirp.sync(path.dirname(filePath));
+
 		fs.writeFileSync(filePath, combined);
 
-		runtimePoolCode = `
-if (!defined('${POOL_NAME}')) {
-    define('${POOL_NAME}', d(__DIR__));
-}`;
-	} else {
-		runtimePoolCode = `
-if (!defined('${POOL_NAME}')) {
-    define('${POOL_NAME}', '${json.replace(/'/g, "\\'")}');
-}`;
+		poolValue = 'p()';
 	}
 
 	return `
@@ -53,13 +49,10 @@ if (!defined('${POOL_NAME}')) {
 /* ========================================
 * KA String Pool Runtime
 * ======================================== */
-${runtimePoolCode}
 if (!function_exists('${runtimeFunctionName}')) {
     function ${runtimeFunctionName}($id) {
-        static $pool = null;
-        if ($pool === null) {
-            $pool = json_decode(${POOL_NAME}, true);
-        }
+        static $pool = json_decode(${poolValue}, true);
+
         return $pool[$id] ?? '';
     }
 }
@@ -92,7 +85,7 @@ export async function injectRuntimeCode(buildContext: BuildContext) {
 		const insertIndex = findInsertIndex(lines);
 
 		lines.splice(insertIndex, 0, '', runtime, '');
-		fs.writeFileSync(entryPath, lines.join('\n'), 'utf8');
+		fs.writeFileSync(entryPath, lines.join('\n'), 'utf-8');
 	} catch (err: any) {
 		logger.error(`❌ Runtime 注入失败: ${__filename}:${err.lineNumber}:${err.columnNumber}`);
 	}
@@ -133,4 +126,38 @@ export function getPartContentInEncapsedRaw(
 	return encapsedRaw.slice(relativeStart, relativeEnd);
 }
 
-export * as default from './stringUtil';
+export function findBuildClass(what: string | AstNode) {
+	if (typeof what === 'string') {
+		return Runtime.options.classes.get(what);
+	}
+
+	if (isKind(what, 'name')) {
+		return Runtime.options.classes.get(getNodeName(what.name));
+	}
+
+	if (isKind(what, 'selfreference')) {
+		return findSelfBuildClass(what);
+	}
+}
+
+export function findSelfBuildClass(node: AstNode) {
+	let parent = node.parent;
+
+	while (parent) {
+		if (isKind(parent, 'class')) {
+			break;
+		}
+		parent = parent.parent;
+	}
+
+	if (parent) {
+		try {
+			return Runtime.options.classes.get(getNodeName(parent.name));
+		} catch (error) {
+			console.error(error);
+			parent.trace();
+		}
+	}
+}
+
+export * as default from './pipeUtil';

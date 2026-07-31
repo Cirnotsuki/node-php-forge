@@ -11,24 +11,22 @@ import {
 	extractStringValue,
 	getPartContentInEncapsedRaw,
 	injectRuntimeCode,
-} from '../utils/stringUtil';
+} from '../utils/pipeUtil';
 import { BuildContext } from '../core/buildOption';
 import PhpParser from 'php-parser';
+import { generateConstantName, getNodeName } from '../utils/helper';
 
 // ========================================
 // AST String Pool Compiler
 // ========================================
 
 export default async function (buildContext: BuildContext) {
-	const POOL_NAME = CONST_PREFIX + uuidv4().slice(-6);
-	buildContext.pool = POOL_NAME;
-
 	const { ENABLE_STRING_POOL, MIN_STRING_LENGTH } = STRING_OPT;
 
 	const phpFiles: string[] = [];
 	const stringMap = buildContext.strings;
 	const stringIdSet = new Set<number>();
-	const runtimeFunctionName = CONST_PREFIX + uuidv4().slice(-6);
+	const runtimeFunctionName = generateConstantName();
 	buildContext.runtime.stringPoolFunction = runtimeFunctionName;
 
 	// ========================================
@@ -37,8 +35,17 @@ export default async function (buildContext: BuildContext) {
 	function shouldSkipString(str: string): boolean {
 		if (!str || str.length < MIN_STRING_LENGTH) return true;
 		if (str.includes('<?php') || str.includes('<?=') || str.includes('?>')) return true;
-		if (str.includes(POOL_NAME)) return true;
 		if (EXCLUDE_STRING.includes(str)) return true;
+		return false;
+	}
+
+	function shouldSkipNode(node: AstNode<PhpParser.String>) {
+		const parent = node.parent;
+		if (isKind(parent, 'call')) {
+			const name = getNodeName(parent.what.name);
+			if (['method_exists', 'function_exists'].includes(name)) return true;
+		}
+
 		return false;
 	}
 
@@ -84,6 +91,7 @@ export default async function (buildContext: BuildContext) {
 		while (stringIdSet.has(stringId)) {
 			stringId = utils.randomNumber(RANDOM_NUMBER_SIZE);
 		}
+		stringIdSet.add(stringId);
 		return stringId;
 	}
 
@@ -125,8 +133,9 @@ export default async function (buildContext: BuildContext) {
 		});
 	}
 
-	function collectString(node: AstNode<AstNodeMap['string']>) {
+	function collectString(node: AstNode<PhpParser.String>) {
 		if (nodeInEncapsed(node)) return;
+		if (shouldSkipNode(node)) return;
 
 		const value = extractStringValue(node);
 		if (value === null) return;
@@ -134,8 +143,8 @@ export default async function (buildContext: BuildContext) {
 		if (shouldSkipString(value)) return;
 		if (stringMap.has(value)) return;
 
-		if (value in buildContext.replace) {
-			stringMap.set(buildContext.replace[value], getRandomID());
+		if (value in Runtime.options.replace) {
+			stringMap.set(Runtime.options.replace[value], getRandomID());
 		} else {
 			stringMap.set(value, getRandomID());
 		}
@@ -231,20 +240,17 @@ export default async function (buildContext: BuildContext) {
 			}
 		});
 
-		// ast.applyReplacements();
+		ast.applyReplacements();
 	});
 
 	// Phase 3: 注入 Runtime
 	logger.log('⚡ 注入 Runtime');
-	if (!Runtime.entryFile) {
-		try {
-			await injectRuntimeCode(buildContext);
-			logger.log(`⚡ Runtime Function: ${runtimeFunctionName}`);
-		} catch (err: any) {
-			logger.error(`❌ Runtime 注入失败: ${__filename}:${err.lineNumber}:${err.columnNumber}`);
-		}
-	} else {
-		logger.log('⚠️ 未找到入口文件，跳过 Runtime 注入');
+
+	try {
+		await injectRuntimeCode(buildContext);
+		logger.log(`⚡ Runtime Function: ${runtimeFunctionName}`);
+	} catch (err: any) {
+		logger.error(`❌ Runtime 注入失败: ${err.message}`);
 	}
 
 	logger.log('\n🎉 AST String Pool 完成');
