@@ -1,12 +1,18 @@
 import path from 'path';
 import fs from 'fs';
 import config from '../../config';
+import { generateVariableName } from '../utils/helper';
 
-export const PACKAGE_REPLACEMENT = {
-	KA_PRIVATE_KEY: '',
-	KA_STRING_POOL: 'binaries/locale.dat',
-	KA_PHP_BINARIES: 'binaries/resource.php',
-	KA_PHP_RUNTIME: 'binaries/runtime.php',
+const settings = { ...config.settings };
+
+const fileType = settings.encrypt ? '.dat' : '.php';
+const binDir = 'binaries';
+
+export const PACKAGE_RESOURCE = {
+	KA_STRING_POOL: `${binDir}/${generateVariableName()}${fileType}`,
+	KA_RUNTIME_INNER_DATA: `${binDir}/${generateVariableName()}${fileType}`,
+	KA_RUNTIME_DATA: `${binDir}/${generateVariableName()}${fileType}`,
+	KA_PHP_BINARIES: `${binDir}/${generateVariableName()}${fileType}`,
 };
 
 export const STRING_OPT = {
@@ -86,7 +92,7 @@ export const TARGET_EXTENSION = '.php';
 
 export const DEBUG = config.debug ?? true;
 export const STRING_POOL_ENCRYPT = config.stringPoolEncrypt ?? false;
-export const ENTRY_ENCRYPT = config.entryEncrypt ?? false;
+export const PHP_FILE_ENCRYPT = config.phpFileEncrypt ?? false;
 
 export const CONST_PREFIX = config.prefix ?? 'KA_';
 

@@ -18,6 +18,7 @@ import { log } from './utils/logger';
 import { BuildContext, BuildOption } from './core/buildOption';
 import phpClass from './lib/php-class';
 import phpFinnally from './lib/php-finnally';
+import config from '../config';
 
 export * as PhpParser from 'php-parser';
 
@@ -28,7 +29,7 @@ export default async function (entryDir: string, distDir: string, options: Build
 	// set root
 	Runtime.distDir = buildContext.distDir;
 	Runtime.sourceDir = buildContext.entryDir;
-
+	const { settings } = Runtime;
 	try {
 		fs.rmSync(buildContext.distDir, { recursive: true, force: true });
 	} finally {
@@ -38,8 +39,10 @@ export default async function (entryDir: string, distDir: string, options: Build
 		Runtime.period = 'define';
 		await phpDefine(buildContext);
 
-		Runtime.period = 'variable';
-		await phpVariable(buildContext);
+		if (settings.variables) {
+			Runtime.period = 'variable';
+			await phpVariable(buildContext);
+		}
 
 		Runtime.period = 'class';
 		await phpClass(buildContext);
@@ -50,8 +53,10 @@ export default async function (entryDir: string, distDir: string, options: Build
 		Runtime.period = 'finnally';
 		await phpFinnally(buildContext);
 
-		Runtime.period = 'string';
-		await phpStringAst(buildContext);
+		if (settings.strings) {
+			Runtime.period = 'string';
+			await phpStringAst(buildContext);
+		}
 
 		Runtime.period = 'optimize';
 		await phpOptimize(buildContext);

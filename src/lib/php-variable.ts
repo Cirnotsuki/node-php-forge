@@ -72,6 +72,18 @@ export default async function (buildContext: BuildContext) {
 		iterator(left);
 	}
 
+	function traceUndefined(node: AstNode<PhpParser.Variable>) {
+		if (isKind(node.parent, 'global')) return;
+		const varname = getNodeName(node.name);
+		if (
+			['this', 'self', '_GET', '_POST', '_SERVER', '_SESSION', '_COOKIE', 'GLOBALS'].includes(
+				varname,
+			)
+		)
+			return;
+		node.trace();
+	}
+
 	await fileIterator(await scanPHPFile(ROOT_DIR), async (file) => {
 		const ast = Ast.create(file);
 
@@ -137,7 +149,7 @@ export default async function (buildContext: BuildContext) {
 			if (isKind(node.parent, 'staticlookup')) return;
 
 			let record = node.lookup();
-			
+
 			// 查找 global 和 use
 			if (isKind(node.parent, 'global')) {
 				// global 已经定义过了，所以从外面一层找是否有定义
@@ -161,6 +173,8 @@ export default async function (buildContext: BuildContext) {
 				} else {
 					node.recordReplacement(record.replace);
 				}
+			} else if (isKind(node, 'variable')) {
+				traceUndefined(node);
 			}
 		});
 

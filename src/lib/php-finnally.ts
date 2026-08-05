@@ -5,7 +5,7 @@ import { BuildClass, BuildContext } from '../core/buildOption';
 import { RecordVariable, RecordFunction, RecordIdentifier } from '../core/recordNode';
 import { isKind, typedAstNode } from '../utils/typeGard';
 import { fileIterator, getRaw, scanPHPFile } from '../utils/utils';
-import { CONST_PREFIX, PACKAGE_REPLACEMENT } from '../config/constans';
+import { CONST_PREFIX } from '../config/constans';
 import { AstNode } from '../types';
 import PhpParser from 'php-parser';
 import { randomPrefix } from '../utils/randomPrefix';
@@ -15,56 +15,73 @@ import { findBuildClass, findSelfBuildClass } from '../utils/pipeUtil';
 export default async function (buildContext: BuildContext) {
 	const ROOT_DIR = buildContext.distDir;
 	const { functions, classes, constants } = Runtime.options;
+	const { settings } = Runtime;
+
 	// const classes = Runtime.options.classes;
+	function handleCallableClassMethod(list: AstNode<PhpParser.List | PhpParser.Array>) {
+		if (!settings.classes) return;
 
-	function handleCallableString(node: AstNode<PhpParser.String>) {
-		if (!functions.has(node.value)) return;
+		if (list.items.length !== 2) return;
 
-		let selfArg: AstNode<PhpParser.String | PhpParser.Array | PhpParser.List> = node;
-		let classNode = null;
-		if (isKind(node.parent, 'entry')) {
-			if (isKind(node.parent.parent, 'array') || isKind(node.parent.parent, 'list')) {
-				selfArg = node.parent.parent;
-				if (isKind(node.parent.parent.items[0], 'entry')) {
-					classNode = node.parent.parent.items[0].value;
-				}
-			}
-		}
+		if (!isKind(list.items[0], 'entry') || !isKind(list.items[1], 'entry')) return;
+		const classNode = list.items[0].value;
+		const methodNode = list.items[1].value;
 
-		if (!selfArg) return;
-
-		const parentNode = selfArg.parent;
-
-		if (!isKind(parentNode, 'call')) return;
-		const hookName = getNodeName(parentNode.what.name);
-
-		// console.log(node.parent);
-
-		const argIndex = parentNode.arguments.indexOf(selfArg);
-		const types = hookArgTypes.get(hookName) || [];
-		const argType = types[argIndex];
-		if (argType !== 'callable') return;
-
-		const functionRecord = functions.get(node.value);
-		if (functionRecord) {
-			node.recordReplacement(`"${functionRecord.replace}"`);
-
-			if (!hookArgTypes.has(hookName)) {
-				Runtime.options.hooks.add(hookName);
-			}
-		}
-
-		if (!classNode || !isKind(classNode, 'string')) return;
+		if (!isKind(classNode, 'string') || !isKind(methodNode, 'string')) return;
 
 		const classRecord = classes.get(classNode.value);
 		if (!classRecord) return;
-		if (!classRecord.methods.has(node.value)) return;
+		if (!classRecord.methods.has(methodNode.value)) return;
 
 		classNode.recordReplacement(`"${classRecord.name.replace}"`);
-		node.recordReplacement(`"${classRecord.methods.get(node.value)!.replace}"`);
+		methodNode.recordReplacement(`"${classRecord.methods.get(methodNode.value)!.replace}"`);
+	}
+	function handleHookCall(callNode: AstNode<PhpParser.Call>) {
+		const hookName = getNodeName(callNode.what.name);
+		const types = hookArgTypes.get(hookName);
+
+		if (!types) {
+			Runtime.options.hooks.add(hookName);
+			return;
+		}
+
+		const argIndex = types.findIndex((type) => type === 'callable');
+		if (argIndex < 0) return;
+
+		const argNode = callNode.arguments[argIndex];
+		if (!argNode) return;
+
+		if (isKind(argNode, 'array') || isKind(argNode, 'list')) {
+			handleCallableClassMethod(argNode);
+			return;
+		}
+
+		if (!isKind(argNode, 'string')) return;
+		if (!settings.functions) return;
+
+		const functionRecord = functions.get(argNode.value);
+		if (functionRecord) {
+			argNode.recordReplacement(`"${functionRecord.replace}"`);
+		}
+	}
+
+	function handleGlobalCall(call: AstNode<PhpParser.Call>) {
+		if (!isKind(call.what, 'name')) return;
+		const fName = getNodeName(call.what.name);
+
+		if (functions.has(fName)) {
+			if (settings.functions) {
+				const record = functions.get(fName)!;
+				call.what.recordReplacement(record.replace);
+			}
+		} else {
+			handleHookCall(call);
+		}
 	}
 
 	function handleStaticCallable(array: AstNode<PhpParser.Array>) {
+		if (!settings.classes) return;
+
 		if (array.items.length !== 2) return;
 
 		if (!isKind(array.items[0], 'entry')) return;
@@ -97,32 +114,14 @@ export default async function (buildContext: BuildContext) {
 	}
 
 	function handleDefine(node: AstNode<PhpParser.Name>) {
+		if (!settings.constants) return;
+
 		const name = getNodeName(node.name);
 		if (!constants.has(name)) return;
 
 		node.recordReplacement(constants.get(name)!);
 	}
 
-	function handleReplacement(node: AstNode<PhpParser.String>) {
-		if (!Runtime.currentFile.includes('runtime.php')) return false;
-		for (const [key, val] of Object.entries(Runtime.replacement)) {
-			if (node.value.includes(key)) {
-				node.recordReplacement(node.raw.replace(key, val));
-				return true;
-			}
-		}
-		return false;
-	}
-
-	function handleGlobalCall(call: AstNode<PhpParser.Call>) {
-		if (!isKind(call.what, 'name')) return;
-		const record = functions.get(getNodeName(call.what.name));
-		
-		if (record) {
-			call.what.recordReplacement(record.replace);
-		}
-		// if(callNode.)
-	}
 	// 记录替换，只处理静态属性
 	await fileIterator(await scanPHPFile(ROOT_DIR), async (file) => {
 		const ast = Ast.create(file);
@@ -137,10 +136,6 @@ export default async function (buildContext: BuildContext) {
 				return;
 			}
 
-			if (isKind(node, 'string')) {
-				handleReplacement(node) || handleCallableString(node);
-				return;
-			}
 			if (isKind(node, 'name')) {
 				handleDefine(node);
 				return;

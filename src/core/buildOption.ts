@@ -8,6 +8,7 @@ import {
 	RecordProperty,
 	RecordVariable,
 } from './recordNode';
+import { generateConstantName, generateVariableName } from '../utils/helper';
 
 export class BuildOption {
 	date: string;
@@ -21,6 +22,16 @@ export class BuildOption {
 	hooks = new Set<string>();
 
 	contexts: BuildContext[] = [];
+
+	contextName = generateConstantName().toUpperCase();
+	symbols = {
+		decrypt: generateVariableName(),
+		aesDecrypt: generateVariableName(),
+		getStringPool: generateVariableName(),
+		getPhpFile: generateVariableName(),
+		getRelativeFileKey: generateVariableName(),
+		createTempFile: generateVariableName(),
+	};
 
 	constructor(_opt?: any) {
 		const opt = {

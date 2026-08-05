@@ -11,6 +11,8 @@ import { normalizePath } from '../utils/utils';
 import { RecordBase } from '../core/recordNode';
 import { arrayBufferToBase64, keyPairs } from '@ka-libs/crypto';
 import { getNodeName, toPhpBinary } from '../utils/helper';
+
+import config from '../../config';
 export default async function (
 	buildDirs: string[],
 	pathes: { source: string; dist: string },
@@ -22,6 +24,12 @@ export default async function (
 
 	Runtime.distRoot = pathes.dist;
 	Runtime.sourceRoot = pathes.source;
+	Runtime.DEBUG = Boolean(config.debug);
+	Runtime.runtimeDir = config.runtimeDir || '';
+	Runtime.settings = {
+		...Runtime.settings,
+		...config.settings,
+	};
 	Runtime.options = buildOption;
 
 	[Runtime.publicKey, Runtime.privateKey] = await keyPairs();
@@ -50,7 +58,7 @@ export default async function (
 
 	mkdirp.sync(jsonDir);
 
-	console.log(buildOption);
+	// console.log(buildOption);
 
 	try {
 		const options = { ...buildOption } as any;

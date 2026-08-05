@@ -25,6 +25,10 @@ export default async function (buildContext: BuildContext) {
 
 	const phpFiles: string[] = [];
 	const stringMap = buildContext.strings;
+	const constants = new Set([
+		...buildContext.options.constants.keys(),
+		...buildContext.options.constants.values(),
+	]);
 	const stringIdSet = new Set<number>();
 	const runtimeFunctionName = generateConstantName();
 	buildContext.runtime.stringPoolFunction = runtimeFunctionName;
@@ -36,6 +40,7 @@ export default async function (buildContext: BuildContext) {
 		if (!str || str.length < MIN_STRING_LENGTH) return true;
 		if (str.includes('<?php') || str.includes('<?=') || str.includes('?>')) return true;
 		if (EXCLUDE_STRING.includes(str)) return true;
+		if (constants.has(str)) return true;
 		return false;
 	}
 

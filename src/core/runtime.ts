@@ -1,12 +1,12 @@
 import path from 'path';
 import fs from 'fs';
-import { ENTRIES, PACKAGE_REPLACEMENT } from '../config/constans';
+import { ENTRIES } from '../config/constans';
 import logger from '../utils/logger';
-import config from '../../config';
 import { Ast } from './ast';
 import { BuildOption } from './buildOption';
-import { toPhpBinary } from '../utils/helper';
+import { generateVariableName, toPhpBinary } from '../utils/helper';
 import { base64ToArrayBuffer } from '@ka-libs/crypto';
+import utils, { normalizePath } from '../utils/utils';
 
 export class Runtime {
 	private static _sourceDir = '';
@@ -27,13 +27,31 @@ export class Runtime {
 	static currentLine: number = 0;
 	static distRoot: string;
 	static sourceRoot: string;
-	static DEBUG = config.debug;
 	static options: BuildOption = new BuildOption();
+
+	static DEBUG = false;
+	static runtimeDir = '';
+	static settings = {
+		constants: false,
+		variables: false,
+		strings: false,
+		functions: false,
+		classes: false,
+		encrypt: false,
+		devMode: false,
+	};
 
 	static publicKey: string = '';
 	static privateKey: string = '';
 
 	static AstCache = new Map<string, Ast>();
+
+	static get isRuntimeEntry() {
+		if (!this.runtimeDir) {
+			return normalizePath(this.currentFile) === normalizePath(this.entryFile);
+		}
+		return normalizePath(this.currentFile).includes(normalizePath(this.runtimeDir));
+	}
 
 	static get sourceDir() {
 		return this._sourceDir;
@@ -60,12 +78,5 @@ export class Runtime {
 
 	static get entryFile() {
 		return this._entryFile;
-	}
-
-	static get replacement() {
-		return {
-			...PACKAGE_REPLACEMENT,
-			KA_PRIVATE_KEY: this.privateKey.replace(/\n/g, '\\n'),
-		};
 	}
 }

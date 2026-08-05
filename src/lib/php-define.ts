@@ -17,6 +17,7 @@ export default async function (buildContext: BuildContext) {
 	const ROOT_DIR = buildContext.distDir;
 
 	const constantMap = Runtime.options.constants;
+	const { settings } = Runtime;
 
 	function shouldSkipConst(constName: string) {
 		return (
@@ -69,11 +70,14 @@ export default async function (buildContext: BuildContext) {
 
 			if (shouldSkipConst(name)) return;
 
+			// 记录常量
 			const replace = generateConstantName();
 			constantMap.set(name, replace);
-			stringNode.recordReplacement(`"${replace}"`);
 
-			console.log(`🔄 ${name} -> ${replace}`);
+			if (settings.constants) {
+				stringNode.recordReplacement(`"${replace}"`);
+				console.log(`🔄 ${name} -> ${replace}`);
+			}
 		});
 	});
 }

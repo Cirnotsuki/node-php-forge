@@ -3,7 +3,7 @@ import os from 'os';
 
 export default {
 	debug: false,
-	entryEncrypt: true,
+	phpFileEncrypt: true,
 	stringPoolEncrypt: true,
 
 	prefix: 'KA_',
@@ -29,6 +29,7 @@ export default {
 					dist: 'D:/laragon2/www',
 				},
 
+	runtimeDir: 'wp-content/mu-plugins',
 	buildDirs: ['./wp-content/mu-plugins', './api', './wp-content/themes/cirnotob'],
 	copyFiles: ['./wp-config.php', './.htaccess'],
 
@@ -41,5 +42,15 @@ export default {
 		database: 'wordpress',
 		user: 'wordpress',
 		password: '123456',
+	},
+
+	settings: {
+		constants: true,
+		variables: true,
+		strings: true,
+		functions: true,
+		classes: true,
+		encrypt: true,
+		devMode: true,
 	},
 };

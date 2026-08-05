@@ -23,6 +23,7 @@ import { findSelfBuildClass, findBuildClass } from '../utils/pipeUtil';
 export default async function (buildContext: BuildContext) {
 	const ROOT_DIR = buildContext.distDir;
 	const classes = Runtime.options.classes;
+	const { settings } = Runtime;
 
 	await fileIterator(await scanPHPFile(ROOT_DIR), async (file) => {
 		const ast = Ast.create(file);
@@ -90,6 +91,7 @@ export default async function (buildContext: BuildContext) {
 		// ast.applyReplacements();
 	});
 
+	if (!settings.classes) return;
 	// 记录替换，只处理静态属性
 	await fileIterator(await scanPHPFile(ROOT_DIR), async (file) => {
 		const ast = Ast.create(file);
@@ -100,7 +102,7 @@ export default async function (buildContext: BuildContext) {
 
 				if (!buildClass) return;
 
-				ast.recordReplacement(node, buildClass.name.replace);
+				node.recordReplacement(buildClass.name.replace);
 				return;
 			}
 
@@ -111,7 +113,7 @@ export default async function (buildContext: BuildContext) {
 				const buildClass = findBuildClass(node.name);
 				if (!buildClass) return;
 
-				ast.recordReplacement(node, buildClass.name.replace);
+				node.recordReplacement(buildClass.name.replace);
 
 				return;
 			}
@@ -125,7 +127,7 @@ export default async function (buildContext: BuildContext) {
 				const record = buildClass.methods.get(node.name);
 				if (!record) return;
 
-				ast.recordReplacement(node, record.replace);
+				node.recordReplacement(record.replace);
 
 				return;
 			}
@@ -138,7 +140,7 @@ export default async function (buildContext: BuildContext) {
 
 				const record = buildClass.properties.get(node.name);
 				if (!record) return;
-				ast.recordReplacement(node, record.replace);
+				node.recordReplacement(record.replace);
 				return;
 			}
 
@@ -148,7 +150,7 @@ export default async function (buildContext: BuildContext) {
 
 				const record = buildClass.constants.get(node.name);
 				if (!record) return;
-				ast.recordReplacement(node, record.replace);
+				node.recordReplacement(record.replace);
 				return;
 			}
 
@@ -161,19 +163,19 @@ export default async function (buildContext: BuildContext) {
 				if (isKind(node.parent.parent, 'call')) {
 					const record = buildClass.methods.get(node.name);
 					if (record) {
-						ast.recordReplacement(node, record.replace);
+						node.recordReplacement(record.replace);
 						return;
 					}
 				}
 
 				if (buildClass.properties.has(node.name)) {
 					const record = buildClass.properties.get(node.name)!;
-					ast.recordReplacement(node, record.replace);
+					node.recordReplacement(record.replace);
 				}
 
 				if (buildClass.constants.has(node.name)) {
 					const record = buildClass.constants.get(node.name)!;
-					ast.recordReplacement(node, record.replace);
+					node.recordReplacement(record.replace);
 				}
 				return;
 			}

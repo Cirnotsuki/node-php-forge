@@ -9,6 +9,7 @@ import { fileIterator, scanPHPFile } from '../utils/utils';
 export default async function (buildContext: BuildContext) {
 	const ROOT_DIR = buildContext.distDir;
 	const functions = Runtime.options.functions;
+	const { settings } = Runtime;
 
 	// 纯记录，函数和实体类的追踪比较复杂
 	await fileIterator(await scanPHPFile(ROOT_DIR), async (file) => {
@@ -33,17 +34,18 @@ export default async function (buildContext: BuildContext) {
 		});
 	});
 
+	if (!settings.functions) return;
 	await fileIterator(await scanPHPFile(ROOT_DIR), async (file) => {
 		const ast = Ast.create(file);
 
-		// 收集函数名
+		// 替换函数名
 		ast.walk((node) => {
 			if (!isKind(node, 'identifier')) return;
 			if (!isKind(node.parent, 'function')) return;
 
 			const record = functions.get(node.name);
 			if (record) {
-				ast.recordReplacement(node, record.replace);
+				node.recordReplacement(record.replace);
 			}
 		});
 	});
