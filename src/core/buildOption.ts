@@ -9,6 +9,7 @@ import {
 	RecordVariable,
 } from './recordNode';
 import { generateConstantName, generateVariableName } from '../utils/helper';
+import { Runtime } from './runtime';
 
 export class BuildOption {
 	date: string;
@@ -24,14 +25,32 @@ export class BuildOption {
 	contexts: BuildContext[] = [];
 
 	contextName = generateConstantName().toUpperCase();
+
 	symbols = {
 		decrypt: generateVariableName(),
 		aesDecrypt: generateVariableName(),
 		getStringPool: generateVariableName(),
 		getPhpFile: generateVariableName(),
+		getBinaryFileChunk: generateVariableName(),
 		getRelativeFileKey: generateVariableName(),
+		findBinariesDir: generateVariableName(),
 		createTempFile: generateVariableName(),
 	};
+
+	resource: {
+		KA_BINARIES_DIR: string;
+		KA_RUMTIME_KEY: string;
+
+		KA_STRING_POOL: string;
+
+		KA_RUNTIME_INNER_DATA: string;
+		KA_RUNTIME_DATA: string;
+
+		KA_PHP_BINARIES: string;
+		KA_PHP_CHUNK_RECORD: string;
+	};
+
+	chunks: { [key: string]: [number, number] } = {};
 
 	constructor(_opt?: any) {
 		const opt = {
@@ -41,6 +60,22 @@ export class BuildOption {
 		this.date = opt.date || new Date().toLocaleDateString();
 		this.time = opt.time || +new Date();
 		this.guid = opt.guid || uuidv4();
+
+		const fileType = opt.fileType || '.dat';
+		const binariesDir = opt.binariesDir || 'binaries';
+
+		this.resource = {
+			KA_BINARIES_DIR: binariesDir,
+			KA_RUMTIME_KEY: generateConstantName().toUpperCase(),
+
+			KA_STRING_POOL: `${binariesDir}/${generateVariableName()}.dat`,
+
+			KA_RUNTIME_INNER_DATA: `${binariesDir}/${generateVariableName()}${fileType}`,
+			KA_RUNTIME_DATA: `${binariesDir}/${generateVariableName()}${fileType}`,
+
+			KA_PHP_BINARIES: `${binariesDir}/${generateVariableName()}${fileType}`,
+			KA_PHP_CHUNK_RECORD: `${binariesDir}/${generateVariableName()}.dat`,
+		};
 	}
 }
 
@@ -80,7 +115,7 @@ export class BuildContext {
 
 	options: BuildOption;
 
-	constructor(entry: string, dist: string, options: BuildOption) {
+	constructor(options: BuildOption, entry: string = '', dist: string = '') {
 		this.entryDir = entry;
 		this.distDir = dist;
 		this.options = options;

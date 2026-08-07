@@ -3,7 +3,7 @@ import fs from 'fs';
 import { ENTRIES } from '../config/constans';
 import logger from '../utils/logger';
 import { Ast } from './ast';
-import { BuildOption } from './buildOption';
+import { BuildContext, BuildOption } from './buildOption';
 import { generateVariableName, toPhpBinary } from '../utils/helper';
 import { base64ToArrayBuffer } from '@ka-libs/crypto';
 import utils, { normalizePath } from '../utils/utils';
@@ -28,9 +28,13 @@ export class Runtime {
 	static distRoot: string;
 	static sourceRoot: string;
 	static options: BuildOption = new BuildOption();
+	static context: BuildContext = new BuildContext(this.options);
 
 	static DEBUG = false;
+
 	static runtimeDir = '';
+	static tempDir: string = 'temp';
+
 	static settings = {
 		constants: false,
 		variables: false,
@@ -38,7 +42,22 @@ export class Runtime {
 		functions: false,
 		classes: false,
 		encrypt: false,
-		devMode: false,
+		debugRuntime: false,
+		buildRuntimeC: false,
+		platform: 'WIN32',
+	};
+
+	static buildC = {
+		KA_C_BINFILE: '',
+		KA_C_TEMPDIR: '',
+		KA_C_TEMP_ROOT: '',
+		KA_C_TEMP_FILETYPE: '',
+		KA_C_AES_KEY: '',
+		KA_C_AES_IV: '',
+		KA_C_AES_TAG: '',
+		KA_C_RUNTIME_FUNCTION_NAME: '',
+		KA_C_CREATE_TEMP_FILE_FUNCTION_NAME: '',
+		KA_C_RUNTIME_DLL_NAME: '',
 	};
 
 	static publicKey: string = '';
@@ -47,6 +66,9 @@ export class Runtime {
 	static AstCache = new Map<string, Ast>();
 
 	static get isRuntimeEntry() {
+		if (!ENTRIES.includes(path.basename(this.currentFile))) {
+			return false;
+		}
 		if (!this.runtimeDir) {
 			return normalizePath(this.currentFile) === normalizePath(this.entryFile);
 		}
@@ -78,5 +100,9 @@ export class Runtime {
 
 	static get entryFile() {
 		return this._entryFile;
+	}
+
+	static get distEntry() {
+		return path.resolve(this.distDir, this._entryFile);
 	}
 }

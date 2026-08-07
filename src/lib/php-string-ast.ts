@@ -1,7 +1,13 @@
 import path from 'path';
 import { uuidv4 } from '@ka-libs/crypto';
 import { AstNode, AnyAstNode, AstNodeMap } from '../types';
-import { CONST_PREFIX, EXCLUDE_STRING, RANDOM_NUMBER_SIZE, STRING_OPT } from '../config/constans';
+import {
+	CONST_PREFIX,
+	ENTRIES,
+	EXCLUDE_STRING,
+	RANDOM_NUMBER_SIZE,
+	STRING_OPT,
+} from '../config/constans';
 import logger from '../utils/logger';
 import utils, { normalizePath } from '../utils/utils';
 import { isKind } from '../utils/typeGard';
@@ -225,6 +231,7 @@ export default async function (buildContext: BuildContext) {
 		logger.log(`❓️ 没有搜集到可替换字符串，跳过替换。`);
 		return;
 	}
+
 	// Phase 2: 替换字符串
 	await utils.fileIterator(phpFiles, async (file) => {
 		logger.log(`🔄 开始替换字符串: ${normalizePath(path.relative(Runtime.distRoot, file))}`);

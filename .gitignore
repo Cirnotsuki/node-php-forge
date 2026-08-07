@@ -10,3 +10,4 @@ lib/*
 maps/*
 package-lock.json
 releases/*
+deps/*

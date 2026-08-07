@@ -1,5 +1,8 @@
 import path from 'path';
-import os from 'os';
+import os, { platform } from 'os';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default {
 	debug: false,
@@ -29,7 +32,8 @@ export default {
 					dist: 'D:/laragon2/www',
 				},
 
-	runtimeDir: 'wp-content/mu-plugins',
+	binariesDir: 'binaries',
+	runtimeDir: './wp-content/mu-plugins',
 	buildDirs: ['./wp-content/mu-plugins', './api', './wp-content/themes/cirnotob'],
 	copyFiles: ['./wp-config.php', './.htaccess'],
 
@@ -45,12 +49,19 @@ export default {
 	},
 
 	settings: {
-		constants: true,
-		variables: true,
+		constants: false,
+		variables: false,
 		strings: true,
-		functions: true,
-		classes: true,
+		functions: false,
+		classes: false,
 		encrypt: true,
-		devMode: true,
+		debugRuntime: true,
+		buildRuntimeC: true,
+		platform: 'WIN32',
+	},
+
+	deps: {
+		phpDev: path.resolve(__dirname, './deps/php-8.3.33/include'),
+		opensslLib: path.resolve(__dirname, './deps/openssl/lib'),
 	},
 };

@@ -23,12 +23,13 @@ import config from '../config';
 export * as PhpParser from 'php-parser';
 
 export default async function (entryDir: string, distDir: string, options: BuildOption) {
-	const buildContext = new BuildContext(entryDir, distDir, options);
+	const buildContext = new BuildContext(options, entryDir, distDir);
 
 	options.contexts.push(buildContext);
 	// set root
 	Runtime.distDir = buildContext.distDir;
 	Runtime.sourceDir = buildContext.entryDir;
+	
 	const { settings } = Runtime;
 	try {
 		fs.rmSync(buildContext.distDir, { recursive: true, force: true });

@@ -1,19 +1,6 @@
 import path from 'path';
 import fs from 'fs';
 import config from '../../config';
-import { generateVariableName } from '../utils/helper';
-
-const settings = { ...config.settings };
-
-const fileType = settings.encrypt ? '.dat' : '.php';
-const binDir = 'binaries';
-
-export const PACKAGE_RESOURCE = {
-	KA_STRING_POOL: `${binDir}/${generateVariableName()}${fileType}`,
-	KA_RUNTIME_INNER_DATA: `${binDir}/${generateVariableName()}${fileType}`,
-	KA_RUNTIME_DATA: `${binDir}/${generateVariableName()}${fileType}`,
-	KA_PHP_BINARIES: `${binDir}/${generateVariableName()}${fileType}`,
-};
 
 export const STRING_OPT = {
 	/**

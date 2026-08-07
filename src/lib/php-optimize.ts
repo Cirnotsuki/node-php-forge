@@ -8,14 +8,15 @@ import { BuildContext } from '../core/buildOption';
 import { Ast } from '../core/ast';
 import { mkdirp } from 'mkdirp';
 import { cleanupEmptyLines, generateVariableName, stripPhpComments } from '../utils/helper';
-import { buildAutoUnlinkScript, buildRuntimeFile, handlePhpFile } from '../utils/pipeUtil';
+import { buildAutoUnlinkScript, buildRuntimeFile, buildRuntimeFileC, handlePhpFile } from '../utils/pipeUtil';
 import { encrypt } from '@ka-libs/crypto';
 // ========================================
 // PHP Optimize Compiler
 // ========================================
 export default async function (buildContext: BuildContext) {
 	const phpFiles = await utils.scanPHPFile(Runtime.distDir);
-	const runtimes: string[] = [];
+	const { symbols } = Runtime.options;
+
 	await utils.fileIterator(phpFiles, async (filePath) => {
 		// 清理文件
 		/**
@@ -63,9 +64,17 @@ export default async function (buildContext: BuildContext) {
 			if (!defined('ABSPATH')) {
 				header('Location: /');
 				exit;
-			}`);
-			const runtimeFile = await buildRuntimeFile(filePath);
-			result.push(stripPhpComments(runtimeFile));
+			}
+			`);
+
+			if (Runtime.settings.encrypt) {
+				const runtimeFile = Runtime.settings.buildRuntimeC ? await buildRuntimeFileC(filePath) : await buildRuntimeFile(filePath);
+				result.push(stripPhpComments(runtimeFile));
+			}
+		}
+
+		if (Runtime.settings.encrypt) {
+			result.push(/* php */ `include ${symbols.getPhpFile}(__FILE__);`);
 		}
 
 		result.push('?>');
@@ -78,8 +87,8 @@ export default async function (buildContext: BuildContext) {
 		const prefix = (head || '').startsWith('<?php') ? '<?php\n' : '';
 		const phpFile = prefix + stripPhpComments(body);
 
-		if (isEntryFile) {
-			handlePhpFile(filePath, phpFile);
+		if (Runtime.settings.encrypt) {
+			await handlePhpFile(filePath, phpFile);
 		} else {
 			result.push(phpFile);
 		}

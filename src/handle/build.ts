@@ -10,7 +10,7 @@ import { BuildContext, BuildOption } from '../core/buildOption';
 import { normalizePath } from '../utils/utils';
 import { RecordBase } from '../core/recordNode';
 import { arrayBufferToBase64, keyPairs } from '@ka-libs/crypto';
-import { getNodeName, toPhpBinary } from '../utils/helper';
+import { generateVariableName, getNodeName, toPhpBinary } from '../utils/helper';
 
 import config from '../../config';
 export default async function (
@@ -20,16 +20,38 @@ export default async function (
 ) {
 	const buildOption = new BuildOption({
 		replace,
+		fileType: config.settings.encrypt ? '.dat' : '.php',
+		binariesDir: config.binariesDir,
 	});
 
 	Runtime.distRoot = pathes.dist;
 	Runtime.sourceRoot = pathes.source;
 	Runtime.DEBUG = Boolean(config.debug);
 	Runtime.runtimeDir = config.runtimeDir || '';
+
 	Runtime.settings = {
 		...Runtime.settings,
 		...config.settings,
 	};
+
+	if (!Runtime.settings.encrypt) {
+		Runtime.settings.debugRuntime = false;
+		Runtime.settings.buildRuntimeC = false;
+	} else {
+		Runtime.tempDir = Runtime.settings.debugRuntime ? 'temp' : 'KA_TEMP';
+	}
+
+	if (Runtime.settings.buildRuntimeC) {
+		const { platform } = Runtime.settings;
+
+		Runtime.buildC.KA_C_TEMPDIR = 'KA_TEMP';
+		Runtime.buildC.KA_C_TEMP_FILETYPE = platform.toLowerCase() === 'win32' ? '.dll' : '.so';
+		Runtime.buildC.KA_C_RUNTIME_FUNCTION_NAME = generateVariableName();
+		Runtime.buildC.KA_C_CREATE_TEMP_FILE_FUNCTION_NAME = buildOption.symbols.createTempFile;
+		Runtime.buildC.KA_C_RUNTIME_DLL_NAME = generateVariableName();
+		Runtime.buildC.KA_C_TEMP_ROOT = Runtime.settings.debugRuntime ? 'ext_dir' : 'temp_root';
+	}
+
 	Runtime.options = buildOption;
 
 	[Runtime.publicKey, Runtime.privateKey] = await keyPairs();
