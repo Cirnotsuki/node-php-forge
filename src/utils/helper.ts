@@ -3,13 +3,15 @@ import { CONST_PREFIX } from '../config/constans';
 import { randomPrefix } from './randomPrefix';
 import { isKind } from './typeGard';
 import { PhpParser } from '..';
-
-export function generateConstantName() {
+import config from '../../config';
+export function generateConstantName(name?: string) {
+	if (name && config.settings.debugRuntime) return name;
 	const hash = uuidv4(true);
 	return CONST_PREFIX + hash.slice(-6).toUpperCase();
 }
 
-export function generateVariableName() {
+export function generateVariableName(name?: string) {
+	if (name && config.settings.debugRuntime) return name;
 	const hash = uuidv4(true);
 	return randomPrefix().slice(1, 3) + hash.slice(-6).toLowerCase();
 }

@@ -1,6 +1,9 @@
 import path from 'path';
 import fs from 'fs';
 import config from '../../config';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export const STRING_OPT = {
 	/**
@@ -62,7 +65,7 @@ export const RESERVED = new Set([
 
 export const REQUIRE_TYPES = ['require', 'require_once', 'include', 'include_once'];
 
-export const ROOT_DIR = config.rootDir || path.resolve('./');
+export const ROOT_DIR = config.rootDir || path.resolve(__dirname, '../../');
 export const MAP_DIR = path.join(ROOT_DIR, 'maps');
 
 export const PUBLIC_KEY = fs.readFileSync(
@@ -91,3 +94,34 @@ export const RESERGVED = [...config.reserved];
 export const EXCLUDE_STRING = [...config.excludeString, 'ABSPATH', 'SHORTINIT'];
 export const EXTERNAL = [...config.external];
 export const ENTRIES = [...config.entries];
+
+export const BUILD_ARGS = {
+	VERSION: config.build?.version || 1,
+	MAGIC: config.build?.magic || 'CHNK',
+	FOOTER_SIZE: config.build?.footerSize || 64,
+	PLAT: config.build?.platform || 'win32',
+	INJECT_EXE: Boolean(config.build?.injectExe),
+};
+
+export const DEPS = {
+	cache: path.resolve(ROOT_DIR, './.cache'),
+	location: config.deps?.location || path.resolve(ROOT_DIR, './deps'),
+
+	openssl: {
+		location: config.deps?.openssl?.location || '',
+		lib: config.deps?.openssl?.lib || '',
+		include: config.deps?.openssl?.include || '',
+		sslDll: config.deps?.openssl?.sslDll || '',
+		cryptoDll: config.deps?.openssl?.cryptoDll || '',
+	},
+
+	zigCC: {
+		version: config.deps?.zigCC?.version || '0.16.0',
+		location: config.deps?.zigCC?.location || '',
+
+		hash: {
+			win32: config.deps?.zigCC?.hash?.win32 || '',
+			linux: config.deps?.zigCC?.hash?.linux || '',
+		},
+	},
+};

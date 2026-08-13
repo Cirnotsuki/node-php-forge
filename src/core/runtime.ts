@@ -1,11 +1,11 @@
 import path from 'path';
 import fs from 'fs';
-import { ENTRIES } from '../config/constans';
+import { BUILD_ARGS, ENTRIES } from '../config/constans';
 import logger from '../utils/logger';
 import { Ast } from './ast';
 import { BuildContext, BuildOption } from './buildOption';
 import { generateVariableName, toPhpBinary } from '../utils/helper';
-import { base64ToArrayBuffer } from '@ka-libs/crypto';
+import { base64ToArrayBuffer, uuidv4 } from '@ka-libs/crypto';
 import utils, { normalizePath } from '../utils/utils';
 
 export class Runtime {
@@ -44,20 +44,47 @@ export class Runtime {
 		encrypt: false,
 		debugRuntime: false,
 		buildRuntimeC: false,
-		platform: 'WIN32',
 	};
 
 	static buildC = {
+		// 记录 runtime chunks 的信息
+		KA_C_RUMTIME_HEX: '',
+		KA_C_RUMTIME_PATH: '',
+
+		// 记录 footer 信息
+		KA_C_FOOTER_STRUCT: '',
+		KA_C_FOOTER_MAGIC_NAME: generateVariableName(),
+
+		KA_C_FOOTER_RUNTIME_OFFSET_NAME: generateVariableName(),
+		KA_C_FOOTER_RUNTIME_LENGTH_NAME: generateVariableName(),
+
+		KA_C_FOOTER_CHUNKS_OFFSET_NAME: generateVariableName(),
+		KA_C_FOOTER_CHUNKS_LENGTH_NAME: generateVariableName(),
+
+		KA_C_FOOTER_SIZE: BUILD_ARGS.FOOTER_SIZE,
+		KA_C_FOOTER_MAGIC_STR: BUILD_ARGS.MAGIC,
+
+		// 基础填充信息
 		KA_C_BINFILE: '',
 		KA_C_TEMPDIR: '',
 		KA_C_TEMP_ROOT: '',
-		KA_C_TEMP_FILETYPE: '',
+
 		KA_C_AES_KEY: '',
 		KA_C_AES_IV: '',
 		KA_C_AES_TAG: '',
-		KA_C_RUNTIME_FUNCTION_NAME: '',
-		KA_C_CREATE_TEMP_FILE_FUNCTION_NAME: '',
-		KA_C_RUNTIME_DLL_NAME: '',
+		KA_C_AES_MASK_KEY: '',
+		KA_C_AES_MASK_IV: '',
+		KA_C_AES_MASK_TAG: '',
+
+		KA_C_AES_DATA_VALUE: '',
+		KA_C_AES_DATA_LEN: '0',
+
+		KA_C_RUNTIME_IN_SELF_VALUE: '',
+		KA_C_RUNTIME_DEBUG_VALUE: '',
+
+		KA_C_TEMP_FILETYPE: '',
+		KA_C_RUNTIME_EXE_NAME: '',
+		KA_C_RUNTIME_EXE_FILETYPE: '',
 	};
 
 	static publicKey: string = '';

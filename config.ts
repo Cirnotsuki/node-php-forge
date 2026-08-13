@@ -49,19 +49,45 @@ export default {
 	},
 
 	settings: {
-		constants: false,
-		variables: false,
+		constants: true,
+		variables: true,
 		strings: true,
-		functions: false,
-		classes: false,
+		functions: true,
+		classes: true,
 		encrypt: true,
 		debugRuntime: true,
 		buildRuntimeC: true,
-		platform: 'WIN32',
+	},
+
+	build: {
+		version: 1,
+		magic: 'CHNK',
+		footerSize: 64,
+		platform: 'win32',
+		injectExe: false,
 	},
 
 	deps: {
-		phpDev: path.resolve(__dirname, './deps/php-8.3.33/include'),
-		opensslLib: path.resolve(__dirname, './deps/openssl/lib'),
+		location: path.resolve(__dirname, './deps'),
+
+		// phpDev: path.resolve(__dirname, './deps/php-8.3.33/include'),
+		openssl: {
+			location: './openssl',
+			lib: './lib',
+			include: './include',
+
+			sslDll: './bin/libssl-3-x64.dll',
+			cryptoDll: './bin/libcrypto-3-x64.dll',
+		},
+
+		zigCC: {
+			version: '0.16.0',
+			location: './zigcc',
+
+			hash: {
+				win32: '68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e',
+				linux: '',
+			},
+		},
 	},
 };

@@ -27,6 +27,8 @@ export class BuildOption {
 	contextName = generateConstantName().toUpperCase();
 
 	symbols = {
+		fileSeek: generateVariableName(),
+		extractFooter: generateVariableName(),
 		decrypt: generateVariableName(),
 		aesDecrypt: generateVariableName(),
 		getStringPool: generateVariableName(),
@@ -68,13 +70,13 @@ export class BuildOption {
 			KA_BINARIES_DIR: binariesDir,
 			KA_RUMTIME_KEY: generateConstantName().toUpperCase(),
 
-			KA_STRING_POOL: `${binariesDir}/${generateVariableName()}.dat`,
+			KA_STRING_POOL: `${binariesDir}/${generateVariableName('pool')}.dat`,
 
-			KA_RUNTIME_INNER_DATA: `${binariesDir}/${generateVariableName()}${fileType}`,
-			KA_RUNTIME_DATA: `${binariesDir}/${generateVariableName()}${fileType}`,
+			KA_RUNTIME_INNER_DATA: `${binariesDir}/${generateVariableName('runtime_inner')}${fileType}`,
+			KA_RUNTIME_DATA: `${binariesDir}/${generateVariableName('runtime')}${fileType}`,
 
-			KA_PHP_BINARIES: `${binariesDir}/${generateVariableName()}${fileType}`,
-			KA_PHP_CHUNK_RECORD: `${binariesDir}/${generateVariableName()}.dat`,
+			KA_PHP_BINARIES: `${binariesDir}/${generateVariableName('binaries')}${fileType}`,
+			KA_PHP_CHUNK_RECORD: `${binariesDir}/${generateVariableName('chunks')}.dat`,
 		};
 	}
 }

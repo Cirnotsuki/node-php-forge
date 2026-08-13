@@ -12,13 +12,13 @@ import { Runtime } from '../core/runtime';
 // }
 export function log(...args: any[]) {
 	if (Runtime.DEBUG) {
-		console.log('[INFO]', ...args);
+		console.log('\n[INFO]', ...args);
 	}
 }
 
 export function instance(...args: any[]) {
 	if (Runtime.DEBUG) {
-		console.warn('[INST]', ...args);
+		console.warn('\n[INST]', ...args);
 	}
 }
 

@@ -1,0 +1,9 @@
+BasedOnStyle: LLVM
+BreakBeforeBraces: Attach
+IndentWidth: 4
+TabWidth: 4
+UseTab: ForIndentation
+IndentPPDirectives: AfterHash
+AlignAfterOpenBracket: BlockIndent
+
+ColumnLimit: 180

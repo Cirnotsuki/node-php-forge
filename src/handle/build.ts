@@ -5,7 +5,7 @@ import { mkdirp } from 'mkdirp';
 
 import logger from '../utils/logger';
 import { Runtime } from '../core/runtime';
-import { MAP_DIR } from '../config/constans';
+import { BUILD_ARGS, MAP_DIR } from '../config/constans';
 import { BuildContext, BuildOption } from '../core/buildOption';
 import { normalizePath } from '../utils/utils';
 import { RecordBase } from '../core/recordNode';
@@ -13,6 +13,8 @@ import { arrayBufferToBase64, keyPairs } from '@ka-libs/crypto';
 import { generateVariableName, getNodeName, toPhpBinary } from '../utils/helper';
 
 import config from '../../config';
+import { mergeAllBinaries } from '../utils/pipeUtil';
+
 export default async function (
 	buildDirs: string[],
 	pathes: { source: string; dist: string },
@@ -42,14 +44,16 @@ export default async function (
 	}
 
 	if (Runtime.settings.buildRuntimeC) {
-		const { platform } = Runtime.settings;
-
-		Runtime.buildC.KA_C_TEMPDIR = 'KA_TEMP';
-		Runtime.buildC.KA_C_TEMP_FILETYPE = platform.toLowerCase() === 'win32' ? '.dll' : '.so';
-		Runtime.buildC.KA_C_RUNTIME_FUNCTION_NAME = generateVariableName();
-		Runtime.buildC.KA_C_CREATE_TEMP_FILE_FUNCTION_NAME = buildOption.symbols.createTempFile;
-		Runtime.buildC.KA_C_RUNTIME_DLL_NAME = generateVariableName();
-		Runtime.buildC.KA_C_TEMP_ROOT = Runtime.settings.debugRuntime ? 'ext_dir' : 'temp_root';
+		Runtime.buildC.KA_C_TEMPDIR = Runtime.settings.debugRuntime ? 'temp' : 'KA_TEMP';
+		Runtime.buildC.KA_C_TEMP_FILETYPE = Runtime.settings.debugRuntime ? '.php' : '.tmp';
+		Runtime.buildC.KA_C_RUNTIME_EXE_FILETYPE =
+			BUILD_ARGS.PLAT.toLowerCase() === 'win32' ? '.exe' : '';
+		Runtime.buildC.KA_C_RUNTIME_EXE_NAME = Runtime.settings.debugRuntime
+			? 'runtime'
+			: generateVariableName();
+		Runtime.buildC.KA_C_TEMP_ROOT = Runtime.settings.debugRuntime ? 'exe_dir' : 'temp_root';
+		Runtime.buildC.KA_C_RUNTIME_IN_SELF_VALUE = `${Number(BUILD_ARGS.INJECT_EXE)}`;
+		Runtime.buildC.KA_C_RUNTIME_DEBUG_VALUE = `${Number(Runtime.settings.debugRuntime)}`;
 	}
 
 	Runtime.options = buildOption;
@@ -74,6 +78,16 @@ export default async function (
 		mkdirp.sync(dist);
 
 		await phpMerge(source, dist, buildOption);
+
+		// 如果没有设定统一入口，则每个目录合并一个 Runtime Exe
+		if (!Runtime.runtimeDir) {
+			await mergeAllBinaries();
+		}
+	}
+
+	// 如果有统一入口则全流程结束后才进行合并
+	if (Runtime.runtimeDir) {
+		await mergeAllBinaries();
 	}
 
 	const jsonDir = path.join(MAP_DIR, new Date(buildOption.time).toLocaleDateString());

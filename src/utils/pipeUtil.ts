@@ -7,11 +7,13 @@ import {
 	aesDecrypt,
 	md5,
 	sha256,
+	uuidv4,
+	getRandomBytes,
 } from '@ka-libs/crypto';
 import path from 'path';
 import fs from 'fs';
 import fsp from 'fs/promises';
-import { STRING_OPT } from '../config/constans';
+import { BUILD_ARGS, STRING_OPT } from '../config/constans';
 import { Runtime } from '../core/runtime';
 import { AstNode } from '../types';
 import { isKind } from './typeGard';
@@ -27,9 +29,10 @@ import {
 	stripPhpComments,
 } from './helper';
 import { mkdirp } from 'mkdirp';
-import { gzipSync } from 'zlib';
+import { crc32, gzipSync } from 'zlib';
 import utils, { normalizePath } from './utils';
-import { buildC, toBufC } from './buildC';
+import { buildC, createFooter, toBuf, toBufC } from './buildC';
+import { FooterBuffer } from '../core/footerBuffer';
 const __filename = fileURLToPath(import.meta.url);
 
 const { ENABLE_STRING_POOL, ENABLE_POOL_COMPRESS, MIN_STRING_LENGTH } = STRING_OPT;
@@ -250,6 +253,51 @@ export function Build_Function_FindBinariesDir() {
 	}`;
 }
 
+export function Build_Function_FileSeek() {
+	const { symbols } = Runtime.options;
+
+	const source = generateVariableName();
+	const offset = generateVariableName();
+	const length = generateVariableName();
+	const fileSize = generateVariableName();
+
+	const fileOpen = generateVariableName();
+	const data = generateVariableName();
+	return /* php */ `
+	function ${symbols.fileSeek}($${source}, $${offset} = 0, $${length} = 0) {
+		$${fileSize} = filesize($${source});
+		if ($${fileSize} === false || $${fileSize} === 0) {
+			return '';
+		}
+
+		if($${offset} < 0) {
+			$${offset} = $${fileSize} + $${offset};
+		}
+
+		if ($${offset} < 0 || $${offset} >= $${fileSize}) {
+			return '';
+		}
+
+		if ($${length} <= 0) {
+			$${length} = $${fileSize} - $${offset};
+			if ($${length} <= 0) return '';
+		}
+
+		$${fileOpen} = fopen($${source}, 'rb');
+		if (!$${fileOpen}) {
+			return '';
+		}
+		
+		try {
+			fseek($${fileOpen}, $${offset}, SEEK_SET);
+			$${data} = fread($${fileOpen}, $${length});
+			return $${data} !== false ? $${data} : '';
+		} finally {
+			fclose($${fileOpen});
+		}
+	}`;
+}
+
 export function Build_Function_Decrypt() {
 	const { symbols } = Runtime.options;
 
@@ -263,11 +311,9 @@ export function Build_Function_Decrypt() {
 	return /* php */ `
 	function ${symbols.decrypt}(string $${source}, int $${offset} = 0, int $${length} = 0) {
 		static $${privateKey} = ${JSON.stringify(Runtime.privateKey)};
-		$${binary} = file_get_contents($${source});
+
+		$${binary} = ${symbols.fileSeek}($${source}, $${offset}, $${length});
 		
-		if($${length} > 0) {
-			$${binary} = substr($${binary}, $${offset}, $${length});
-		}
 		// 切分数据：前 256 字节是 RSA 加密的载荷，剩余的是 AES 密文 
 		if (!openssl_private_decrypt(substr($${binary}, 0, 256), $${payload}, $${privateKey}, OPENSSL_PKCS1_OAEP_PADDING)) {
 			return '';
@@ -276,41 +322,66 @@ export function Build_Function_Decrypt() {
 	}`;
 }
 
-export function Build_Function_getBinaryFileChunk() {
+export function Build_Function_ExtractFooter() {
 	const { symbols } = Runtime.options;
-	const { resource } = Runtime.options;
+	const { buildC } = Runtime;
+
+	const footer = createFooter();
+
+	const phpFile = generateVariableName();
+	const binFile = generateVariableName();
+	const sourceDir = generateVariableName();
+	const rawFooter = generateVariableName();
+	const footerArr = generateVariableName();
+
+	return /* php */ `
+	function ${symbols.extractFooter}($${phpFile}) {
+		$${sourceDir} = ${buildSourceDirValue(phpFile)};
+		$${binFile} = ${buildBinFileValue(sourceDir)};
+		$${rawFooter} = ${symbols.fileSeek}($${binFile}, -${footer.size}, ${footer.size});
+
+		if ($${rawFooter} === '' || strlen($${rawFooter}) !== ${footer.size}) {
+			throw new Exception('Failed to read complete File');
+		}
+
+		$${footerArr} = unpack('${footer.unpacker}', $${rawFooter});
+		if($${footerArr}['${buildC.KA_C_FOOTER_MAGIC_NAME}'] !== '${buildC.KA_C_FOOTER_MAGIC_STR}') {
+			throw new Exception('Invalid Data');
+		}
+		return $${footerArr};
+	}`;
+}
+
+export function Build_Function_getBinaryFileChunk() {
+	const { symbols, resource } = Runtime.options;
+	const { buildC } = Runtime;
 
 	const phpFile = generateVariableName();
 	const chunks = generateVariableName();
 	const binDir = generateVariableName();
 	const runtimeKey = generateVariableName();
-	const chunkFile = generateVariableName();
+	const binFile = generateVariableName();
 	const chunkName = generateVariableName();
 	const sub = generateVariableName();
-
-	const defineBinDir = Runtime.runtimeDir
-		? ''
-		: `$${binDir} = ${symbols.findBinariesDir}($${phpFile});`;
-
-	const runtimeKeyValue = Runtime.runtimeDir
-		? /* php */ `'${resource.KA_RUMTIME_KEY}'`
-		: /* php */ `${symbols.getRelativeFileKey}($${binDir})`;
-
-	const chunkFileValue = Runtime.runtimeDir
-		? /* php */ `realpath(ABSPATH . DIRECTORY_SEPARATOR . '${Runtime.runtimeDir}' . DIRECTORY_SEPARATOR . '${resource.KA_PHP_CHUNK_RECORD}')`
-		: /* php */ `$${binDir} . '/${resource.KA_PHP_CHUNK_RECORD}'`;
+	const footerArr = generateVariableName();
 
 	return /* php */ `
 	function ${symbols.getBinaryFileChunk}($${phpFile}, $${sub} = '') {
 		static $${chunks} = [];
 
-		${defineBinDir}
-		$${runtimeKey} = ${runtimeKeyValue};
-		$${chunkFile} = ${chunkFileValue};
+		${Runtime.runtimeDir ? '' : `$${binDir} = ${buildSourceDirValue(phpFile)};`}
+
+		$${runtimeKey} = ${
+			Runtime.runtimeDir
+				? /* php */ `'${resource.KA_RUMTIME_KEY}'`
+				: /* php */ `${symbols.getRelativeFileKey}($${binDir})`
+		};
+		$${binFile} = ${buildBinFileValue(binDir)};
 
 		if (!array_key_exists($${runtimeKey} , $${chunks})) {
-			if ($${chunkFile} && is_file($${chunkFile})) {
-				$${chunks}[$${runtimeKey}] = ${symbols.decrypt}($${chunkFile});
+			if ($${binFile} && is_file($${binFile})) {
+				$${footerArr} = ${symbols.extractFooter}($${phpFile});
+				$${chunks}[$${runtimeKey}] = ${symbols.decrypt}($${binFile}, $${footerArr}['${buildC.KA_C_FOOTER_CHUNKS_OFFSET_NAME}'], $${footerArr}['${buildC.KA_C_FOOTER_CHUNKS_LENGTH_NAME}']);
 			} else {
 				$${chunks}[$${runtimeKey}] = [];
 			}
@@ -321,13 +392,35 @@ export function Build_Function_getBinaryFileChunk() {
 	}`;
 }
 
+export function Build_Function_GetStringPool() {
+	const { symbols, contextName } = Runtime.options;
+	const binFile = generateVariableName();
+	const contents = generateVariableName();
+	const sourceDir = generateVariableName();
+
+	const offset = generateVariableName();
+	const length = generateVariableName();
+
+	return /* php */ `
+	function ${symbols.getStringPool}() {
+		$${sourceDir} = ${buildSourceDirValue()};
+		$${binFile} = ${buildBinFileValue(sourceDir)};
+
+		[$${offset}, $${length}] = ${symbols.getBinaryFileChunk}($GLOBALS['${contextName}'], '.string');
+		$${contents} = ${symbols.decrypt}($${binFile}, $${offset}, $${length});
+
+		if (empty($${contents})) {
+			return '[]';
+		}
+
+		return $${contents};
+	}`;
+}
+
 export function Build_Function_GetPhpFile() {
 	if (!Runtime.settings.encrypt) return '';
 
-	const { symbols } = Runtime.options;
-
-	const KA_CONTEXT = generateConstantName().toUpperCase();
-	const { resource } = Runtime.options;
+	const { symbols, contextName } = Runtime.options;
 
 	const phpFile = generateVariableName();
 	const tmpFile = generateVariableName();
@@ -341,46 +434,24 @@ export function Build_Function_GetPhpFile() {
 	const offset = generateVariableName();
 	const length = generateVariableName();
 
-	const binFileValue = Runtime.runtimeDir
-		? /* php */ `realpath(ABSPATH . DIRECTORY_SEPARATOR . '${Runtime.runtimeDir}' . DIRECTORY_SEPARATOR . '${resource.KA_PHP_BINARIES}')`
-		: /* php */ `$${sourceDir} . '/${resource.KA_PHP_BINARIES}'`;
+	return /* php */ `
+	function ${symbols.getPhpFile}(string $${phpFile}) {
 
-	const sourceDirValue = Runtime.runtimeDir
-		? /* php */ `realpath(ABSPATH . DIRECTORY_SEPARATOR . '${Runtime.runtimeDir}')`
-		: /* php */ `dirname(${symbols.findBinariesDir}($${phpFile}))`;
+		$${fileKey} = ${symbols.getRelativeFileKey}($${phpFile});
+		$${prefix} = md5($${fileKey}) . '_';
 
-	let execFunction = /* php */ `
-		function ${symbols.getStringPool}() {
-			$${binFile} = ${binFileValue};
+		$${sourceDir} = ${buildSourceDirValue(phpFile)};
+		$${binFile} = ${buildBinFileValue(sourceDir)};
 
-			[$${offset}, $${length}] = ${symbols.getBinaryFileChunk}($GLOBALS['${KA_CONTEXT}'], '.string');
-			$${contents} = ${symbols.decrypt}($${binFile}, $${offset}, $${length});
+		[$${offset}, $${length}] = ${symbols.getBinaryFileChunk}($${phpFile});
+		$${contents} = ${symbols.decrypt}($${binFile}, $${offset}, $${length});
 
-			if (empty($${contents})) {
-				return '[]';
-			}
+		$${tmpFile} = ${symbols.createTempFile}($${contents}, $${prefix}, ${buildTempDir(sourceDir)});
 
-			return $${contents};
-		}`;
+		$GLOBALS['${contextName}'] = $${phpFile};
 
-	execFunction += /* php */ `
-		function ${symbols.getPhpFile}(string $${phpFile}) {
-			$${fileKey} = ${symbols.getRelativeFileKey}($${phpFile});
-			$${prefix} = md5($${fileKey}) . '_';
-			$${sourceDir} = ${sourceDirValue};
-
-			$${binFile} = ${binFileValue};
-
-			[$${offset}, $${length}] = ${symbols.getBinaryFileChunk}($${phpFile});
-			$${contents} = ${symbols.decrypt}($${binFile}, $${offset}, $${length});
-
-			$${tmpFile} = ${symbols.createTempFile}($${contents}, $${prefix}, ${buildTempDir(sourceDir)});
-
-			$GLOBALS['${KA_CONTEXT}'] = $${phpFile};
-			return $${tmpFile};
-		}`;
-
-	return execFunction;
+		return $${tmpFile};
+	}`;
 }
 
 export async function Build_Include_Runtime(innerRuntime: string, dataPath: string) {
@@ -426,12 +497,18 @@ export async function buildRuntimeFile(entryFilePath: string) {
 	innerRuntime += Build_Function_GetRelativeFileKey();
 	// 获取文件目录下的 binaries 文件
 	innerRuntime += Build_Function_FindBinariesDir();
+	// 使用 fileSeek 减少一定量的内存消耗
+	innerRuntime += Build_Function_FileSeek();
 	// 解密 dat 文件
 	innerRuntime += Build_Function_Decrypt();
+	// 获取 Footer 数据
+	innerRuntime += Build_Function_ExtractFooter();
 	// 获取文件在 BinaryFile 中的 chunk 位置
 	innerRuntime += Build_Function_getBinaryFileChunk();
 	// 根据要不要加密入口代码生成不一样的runtime文件
 	innerRuntime += Build_Function_GetPhpFile();
+	// 获取字符串的函数
+	innerRuntime += Build_Function_GetStringPool();
 
 	const dataFile = path.resolve(path.dirname(entryFilePath), resource.KA_RUNTIME_INNER_DATA);
 	innerRuntime = await Build_Include_Runtime(innerRuntime, dataFile);
@@ -444,7 +521,6 @@ export async function buildRuntimeFile(entryFilePath: string) {
 	return /* php */ `eval(gzdecode(file_get_contents(__DIR__ . '/${resource.KA_RUNTIME_DATA}')));`;
 }
 
-
 export async function buildRuntimeFileC(entryFilePath: string) {
 	if (!Runtime.isRuntimeEntry) return '';
 	const { resource } = Runtime.options;
@@ -452,36 +528,85 @@ export async function buildRuntimeFileC(entryFilePath: string) {
 	mkdirp.sync(path.dirname(runtimeFile));
 
 	// 外层的 runtime 定义基础的 Aes 解密和临时文件引用函数
-	let runtime = '';
-
+	let runtime = '<?php\n';
+	runtime += buildAutoUnlinkScript();
+	// 解密的文件需要保存成临时文件引用
+	runtime += Build_Function_CreateTempFile();
 	// Aes 解密是不能进一步加密的第一个入口文件
 	runtime += Build_Function_AesDecrypt();
 	// 获取文件路径的函数
 	runtime += Build_Function_GetRelativeFileKey();
 	// 获取文件目录下的 binaries 文件
 	runtime += Build_Function_FindBinariesDir();
+	// 使用 fileSeek 减少一定量的内存消耗
+	runtime += Build_Function_FileSeek();
 	// 解密 dat 文件
 	runtime += Build_Function_Decrypt();
+	// 获取 Footer 数据
+	runtime += Build_Function_ExtractFooter();
 	// 获取文件在 BinaryFile 中的 chunk 位置
 	runtime += Build_Function_getBinaryFileChunk();
 	// 根据要不要加密入口代码生成不一样的runtime文件
 	runtime += Build_Function_GetPhpFile();
+	// 获取字符串的函数
+	runtime += Build_Function_GetStringPool();
 
-	const data = new TextEncoder().encode(runtime);
-	const aes = await aesEncrypt(data, true);
+	// const data = new TextEncoder().encode(runtime);
+	const aes = await aesEncrypt(runtime, true);
 
-	fs.writeFileSync(runtimeFile, new Uint8Array(aes.data));
+	// fs.writeFileSync(runtimeFile, new Uint8Array(aes.data));
 
-	Runtime.buildC.KA_C_BINFILE = path.basename(runtimeFile);
-	Runtime.buildC.KA_C_AES_KEY = toBufC(aes.payload.slice(0, 32));
-	Runtime.buildC.KA_C_AES_IV = toBufC(aes.payload.slice(32, 32 + 12));
-	Runtime.buildC.KA_C_AES_TAG = toBufC(aes.payload.slice(-16));
+	// 将 runtime 硬编码进 EXE
+	// if (BUILD_ARGS.INJECT_EXE) {
+	Runtime.buildC.KA_C_BINFILE = '';
+	Runtime.buildC.KA_C_AES_DATA_VALUE = toBufC(aes.data);
+	Runtime.buildC.KA_C_AES_DATA_LEN = aes.data.byteLength + '';
+	// } else {
+	// Runtime.buildC.KA_C_BINFILE = path.basename(resource.KA_PHP_BINARIES);
+	// Runtime.buildC.KA_C_AES_DATA_LEN = '0';
 
-	await buildC();
-	
+	// 更新 chunks 记录
+	// Runtime.buildC.KA_C_RUMTIME_HEX = uuidv4(true);
+	// await updateChunks(Runtime.buildC.KA_C_RUMTIME_HEX, aes.data);
+	// }
+	// 原始随机密钥（不变）
+	const realKey = new Uint8Array(aes.payload.slice(0, 32));
+	const realIv = new Uint8Array(aes.payload.slice(32, 32 + 12));
+	const realTag = new Uint8Array(aes.payload.slice(-16)); // GCM tag 也建议混淆
+	// 生成一次性 XOR 掩码（每次构建随机）
+	const xorMaskKey = getRandomBytes(32);
+	const xorMaskIv = getRandomBytes(12);
+	const xorMaskTag = getRandomBytes(16);
+
+	// 预计算混淆后的值
+	const obfKey = Buffer.alloc(32);
+	const obfIv = Buffer.alloc(12);
+	const obfTag = Buffer.alloc(16);
+	for (let i = 0; i < 32; i++) obfKey[i] = realKey[i] ^ xorMaskKey[i];
+	for (let i = 0; i < 12; i++) obfIv[i] = realIv[i] ^ xorMaskIv[i];
+	for (let i = 0; i < 16; i++) obfTag[i] = realTag[i] ^ xorMaskTag[i];
+
+	Runtime.buildC.KA_C_AES_KEY = toBufC(obfKey.buffer);
+	Runtime.buildC.KA_C_AES_IV = toBufC(obfIv.buffer);
+	Runtime.buildC.KA_C_AES_TAG = toBufC(obfTag.buffer);
+	Runtime.buildC.KA_C_AES_MASK_KEY = toBufC(xorMaskKey.buffer);
+	Runtime.buildC.KA_C_AES_MASK_IV = toBufC(xorMaskIv.buffer);
+	Runtime.buildC.KA_C_AES_MASK_TAG = toBufC(xorMaskTag.buffer);
+
+	const cPath = path.resolve(
+		path.dirname(runtimeFile),
+		Runtime.buildC.KA_C_RUNTIME_EXE_NAME + Runtime.buildC.KA_C_RUNTIME_EXE_FILETYPE,
+	);
+	await buildC(path.resolve(path.dirname(runtimeFile), cPath));
+
+	// 记录 exe 路径
+	Runtime.buildC.KA_C_RUMTIME_PATH = cPath;
+
+	const output = generateVariableName();
+
 	return /* php */ `
-		dl(__DIR__ . '/${resource.KA_BINARIES_DIR}' . '/${Runtime.buildC.KA_C_RUNTIME_DLL_NAME}${Runtime.buildC.KA_C_TEMP_FILETYPE}');
-		include (${Runtime.buildC.KA_C_RUNTIME_FUNCTION_NAME}());
+		exec(escapeshellarg(__DIR__ . '/${resource.KA_BINARIES_DIR}/${Runtime.buildC.KA_C_RUNTIME_EXE_NAME}${Runtime.buildC.KA_C_RUNTIME_EXE_FILETYPE}') . ' 2>' . (PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null'), $${output});
+		include (trim($${output}[0] ?? ''));
 	`;
 }
 
@@ -497,14 +622,14 @@ export async function handlePhpFile(phpFilePath: string, phpFile: string) {
 	await updateChunks(chunkName, encryptedPhpFile);
 }
 
-export async function updateChunks(chunkName: string, data: ArrayBuffer) {
+export async function getChunksRecord() {
 	const { resource } = Runtime.options;
 
 	const binFile = Runtime.runtimeDir
 		? path.resolve(Runtime.distRoot, Runtime.runtimeDir, resource.KA_PHP_BINARIES)
 		: path.resolve(Runtime.distDir, resource.KA_PHP_BINARIES);
 
-	mkdirp.sync(path.dirname(binFile));
+	await mkdirp(path.dirname(binFile));
 
 	const chunkRecordFile = Runtime.runtimeDir
 		? path.resolve(Runtime.distRoot, Runtime.runtimeDir, resource.KA_PHP_CHUNK_RECORD)
@@ -514,12 +639,24 @@ export async function updateChunks(chunkName: string, data: ArrayBuffer) {
 	if (fs.existsSync(chunkRecordFile)) {
 		const recordBuffer = await fsp.readFile(chunkRecordFile);
 		chunkRecord = await decrypt(recordBuffer.buffer, Runtime.privateKey);
+
+		return {
+			binFile,
+			chunkRecordFile,
+			chunkRecord,
+			chunkBuffer: new Uint8Array(recordBuffer.buffer),
+		};
 	}
+	return { binFile, chunkRecordFile, chunkRecord, chunkBuffer: new Uint8Array(0) };
+}
+
+export async function updateChunks(chunkName: string, data: ArrayBuffer) {
+	const { binFile, chunkRecordFile, chunkRecord } = await getChunksRecord();
 
 	// console.log(chunkRecord);
 	let offset = 0;
 	if (fs.existsSync(binFile)) {
-		const stat = fs.statSync(binFile);
+		const stat = await fsp.stat(binFile);
 		offset = stat.size;
 	}
 
@@ -537,6 +674,164 @@ export async function updateChunks(chunkName: string, data: ArrayBuffer) {
 	}
 
 	await fsp.writeFile(chunkRecordFile, new Uint8Array(chunkRecordEncrypted));
+}
+
+export async function mergeChunks(targetBinFile: string) {
+	const { resource } = Runtime.options;
+
+	const { binFile, chunkRecordFile, chunkRecord } = await getChunksRecord();
+	if (!fs.existsSync(targetBinFile)) return;
+	if (!fs.existsSync(binFile)) return;
+	if (!fs.existsSync(chunkRecordFile)) return;
+
+	// console.log(chunkRecord);
+	let offset = 0;
+
+	const stat = await fsp.stat(targetBinFile);
+	offset = stat.size;
+
+	for (const key of Object.keys(chunkRecord)) {
+		chunkRecord[key][0] += offset;
+	}
+
+	const chunkRecordEncrypted = await encrypt(chunkRecord, Runtime.publicKey, true);
+
+	if (!chunkRecordEncrypted) return;
+	await fsp.writeFile(chunkRecordFile, new Uint8Array(chunkRecordEncrypted));
+
+	await fsp.appendFile(targetBinFile, await fsp.readFile(binFile));
+	resource.KA_PHP_BINARIES = `${resource.KA_BINARIES_DIR}/${path.basename(targetBinFile)}`;
+
+	console.log(`🔐 ==> Merge ${binFile} -> ${targetBinFile}`);
+
+	await fsp.unlink(binFile);
+}
+
+export async function appendChunksToBinFile() {
+	const { KA_C_RUMTIME_HEX } = Runtime.buildC;
+
+	// 获取新的信息
+	const { binFile, chunkRecordFile, chunkRecord, chunkBuffer } = await getChunksRecord();
+
+	if (!fs.existsSync(chunkRecordFile)) return;
+
+	const binFileBuffer = await fsp.readFile(binFile);
+
+	const chunkName = md5(KA_C_RUMTIME_HEX);
+	const [runtimeOffset, runtimeLength] = chunkRecord[chunkName] ?? [0, 0];
+
+	// 1. 从 binaryFile(exe) 中精确读取 runtime 区段用于 CRC
+	const runtimeBuffer = binFileBuffer.buffer.slice(runtimeOffset, runtimeOffset + runtimeLength);
+
+	// 构建 64 字节 Footer
+	const footer = createFooter(
+		runtimeOffset,
+		runtimeLength,
+		// Chunks Offset
+		binFileBuffer.byteLength,
+		// Chunks Length
+		chunkBuffer.byteLength,
+		crc32(new Uint8Array(runtimeBuffer)),
+		crc32(chunkBuffer),
+	);
+
+	// 拼接 Chunks
+	await fsp.appendFile(binFile, chunkBuffer);
+	await fsp.unlink(chunkRecordFile);
+
+	// 拼接 Footer
+	await fsp.appendFile(binFile, footer.buffer);
+
+	await checkBinaryData();
+
+	console.log(`✅ Runtime ${path.basename(binFile)} Appended:`);
+	console.log(`   Runtime: offset=${runtimeOffset}, len=${runtimeBuffer.byteLength}`);
+	console.log(`   Chunks:  offset=${binFileBuffer.byteLength}, len=${chunkBuffer.byteLength}`);
+}
+
+export async function checkBinaryData() {
+	const { resource } = Runtime.options;
+	const {
+		KA_C_AES_KEY,
+		KA_C_AES_IV,
+		KA_C_AES_TAG,
+		KA_C_FOOTER_RUNTIME_OFFSET_NAME,
+		KA_C_FOOTER_RUNTIME_LENGTH_NAME,
+		KA_C_FOOTER_CHUNKS_OFFSET_NAME,
+		KA_C_FOOTER_CHUNKS_LENGTH_NAME,
+	} = Runtime.buildC;
+
+	const binFile = Runtime.runtimeDir
+		? path.resolve(Runtime.distRoot, Runtime.runtimeDir, resource.KA_PHP_BINARIES)
+		: path.resolve(Runtime.distDir, resource.KA_PHP_BINARIES);
+
+	const binFileBuffer = await fsp.readFile(binFile);
+
+	const footer = createFooter();
+
+	const result = footer.unpack(Buffer.from(binFileBuffer.buffer.slice(-footer.size)));
+	console.log({ result });
+
+	const runtime = binFileBuffer.buffer.slice(
+		result[KA_C_FOOTER_RUNTIME_OFFSET_NAME],
+		result[KA_C_FOOTER_RUNTIME_OFFSET_NAME] + result[KA_C_FOOTER_RUNTIME_LENGTH_NAME],
+	);
+
+	if (runtime.byteLength > 0) {
+		console.log('\nAesDecrypt runtime checkBinaryData');
+		try {
+			const payload = toBuf([KA_C_AES_KEY, KA_C_AES_IV, KA_C_AES_TAG].join(', '));
+			await aesDecrypt(runtime, payload);
+			console.log('AesDecrypt runtime Success\n');
+		} catch (e) {
+			console.log(e);
+		}
+	}
+
+	const chunksRecord = binFileBuffer.buffer.slice(
+		result[KA_C_FOOTER_CHUNKS_OFFSET_NAME],
+		result[KA_C_FOOTER_CHUNKS_OFFSET_NAME] + result[KA_C_FOOTER_CHUNKS_LENGTH_NAME],
+	);
+
+	console.log('\ndecrypt chunksRecord checkBinaryData');
+	try {
+		await decrypt(chunksRecord, Runtime.privateKey);
+		console.log('decrypt chunksRecord Success\n');
+	} catch (e) {
+		console.log(e);
+	}
+}
+
+export async function mergeAllBinaries() {
+	// 创建 exe 入口时，合并 binaryFile 到 exe
+	if (Runtime.settings.buildRuntimeC && BUILD_ARGS.INJECT_EXE) {
+		const { KA_C_RUMTIME_PATH } = Runtime.buildC;
+
+		if (!fs.existsSync(KA_C_RUMTIME_PATH)) return;
+		// 将 binaryFile 合并追加到 RuntimeExe 尾部
+		await mergeChunks(KA_C_RUMTIME_PATH);
+	}
+	await appendChunksToBinFile();
+}
+
+export function buildSourceDirValue(phpFile?: string) {
+	const { symbols, contextName } = Runtime.options;
+
+	if (Runtime.runtimeDir) {
+		return /* php */ `realpath(ABSPATH . DIRECTORY_SEPARATOR . '${Runtime.runtimeDir}')`;
+	}
+	if (phpFile) {
+		return /* php */ `dirname(${symbols.findBinariesDir}($${phpFile}))`;
+	}
+	return /* php */ `dirname(${symbols.findBinariesDir}($GLOBALS['${contextName}']))`;
+}
+
+export function buildBinFileValue(sourceDir: string) {
+	const { resource } = Runtime.options;
+	if (Runtime.runtimeDir) {
+		return /* php */ `realpath(ABSPATH . DIRECTORY_SEPARATOR . '${Runtime.runtimeDir}' . DIRECTORY_SEPARATOR . '${resource.KA_PHP_BINARIES}')`;
+	}
+	return /* php */ `$${sourceDir} . '/${resource.KA_PHP_BINARIES}'`;
 }
 
 export function buildAutoUnlinkScript() {

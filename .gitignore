@@ -5,6 +5,7 @@ entries/*
 temp/*
 .temp/*
 .dev/*
+.cache/*
 logs/*
 lib/*
 maps/*
