@@ -7,7 +7,7 @@ import child_process from 'child_process';
 import config from '../../config';
 import { execa } from 'execa';
 import { getEXE } from './deps';
-import { BUILD_ARGS, DEPS } from '../config/constans';
+import { BUILD_ARGS, DEPS, ROOT_DIR } from '../config/constans';
 import { runFile } from './run-file';
 import { FooterBuffer } from '../core/footerBuffer';
 
@@ -152,7 +152,7 @@ async function createBindingGyp(dirPathC: string) {
  * 生成 runtime.c
  */
 async function buildRuntimeExe() {
-	const template = path.resolve(__dirname, '../buildC/template.c');
+	const template = path.resolve(ROOT_DIR, './templates/template.c');
 
 	const fileC = await fsp.readFile(template, 'utf-8');
 
