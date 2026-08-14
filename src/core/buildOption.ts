@@ -25,6 +25,7 @@ export class BuildOption {
 	contexts: BuildContext[] = [];
 
 	contextName = generateConstantName().toUpperCase();
+	runtimeDirName = generateConstantName().toUpperCase();
 
 	symbols = {
 		fileSeek: generateVariableName(),

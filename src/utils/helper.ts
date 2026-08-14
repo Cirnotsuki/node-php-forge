@@ -1,9 +1,23 @@
 import { uuidv4 } from '@ka-libs/crypto';
 import { CONST_PREFIX } from '../config/constans';
-import { randomPrefix } from './randomPrefix';
 import { isKind } from './typeGard';
 import { PhpParser } from '..';
 import config from '../../config';
+
+export function randomPrefix() {
+	const chars = 'abcdefghijklmnopqrstuvwxyz';
+	let prefix = '';
+
+	const len = Math.floor(Math.random() * 3) + 1; // 1~3位
+
+	for (let i = 0; i < len; i++) {
+		prefix += chars[Math.floor(Math.random() * chars.length)];
+	}
+
+	return `$${prefix}`;
+}
+
+
 export function generateConstantName(name?: string) {
 	if (name && config.settings.debugRuntime) return name;
 	const hash = uuidv4(true);

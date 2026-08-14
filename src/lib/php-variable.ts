@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { uuidv4 } from '@ka-libs/crypto/uuidv4';
 import PHPParser from 'php-parser';
-import { randomPrefix } from '../utils/randomPrefix';
+import { randomPrefix } from '../utils/helper';
 import { AstNode, AnyAstNode, ScopeNode } from '../types';
 import { RESERVED, VARIABLE_OPT } from '../config/constans';
 import { isKind, isScopeNode, typedAstNode } from '../utils/typeGard';

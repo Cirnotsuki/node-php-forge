@@ -31,8 +31,9 @@ import {
 import { mkdirp } from 'mkdirp';
 import { crc32, gzipSync } from 'zlib';
 import utils, { normalizePath } from './utils';
-import { buildC, createFooter, toBuf, toBufC } from './buildC';
-import { FooterBuffer } from '../core/footerBuffer';
+
+import { BuildC, extractArchive } from '../';
+// import { buildC, createFooter, toBuf, toBufC } from '../../../ka-buildc/src/core/build';
 const __filename = fileURLToPath(import.meta.url);
 
 const { ENABLE_STRING_POOL, ENABLE_POOL_COMPRESS, MIN_STRING_LENGTH } = STRING_OPT;
@@ -176,9 +177,9 @@ export function Build_Function_CreateTempFile() {
 	const contents = generateVariableName();
 	const tempDir = generateVariableName();
 	const tempFile = generateVariableName();
-	const fileType = Runtime.settings.debugRuntime ? '.php' : '.dat';
+	const fileType = Runtime.settings.debugRuntime ? '.php' : '.tmp';
 
-	return /* php */ `
+	return wrapPhpCode(/* php */ `
 	function ${symbols.createTempFile}($${contents}, $${prefix}, $${tempDir}) {
 		@mkdir($${tempDir}, 0700, true);
 		$${tempFile} = $${tempDir} . '/ka_' . $${prefix} . bin2hex(random_bytes(6)) . '${fileType}';
@@ -186,7 +187,7 @@ export function Build_Function_CreateTempFile() {
 
 		file_put_contents($${tempFile}, $${contents});
 		return $${tempFile};
-	}`;
+	}`);
 }
 
 export function getRelativeFileKey(filePath: string) {
@@ -199,7 +200,7 @@ export function Build_Function_GetRelativeFileKey() {
 	const file = generateVariableName();
 	const relative = generateVariableName();
 	const absPath = generateVariableName();
-	return /* php */ `
+	return wrapPhpCode(/* php */ `
 	function ${symbols.getRelativeFileKey}($${file}) {
 		$${absPath} = str_replace(['/', '\\\\'], '.', ABSPATH);
 		$${relative} = str_replace(['/', '\\\\'], '.', $${file});
@@ -208,7 +209,7 @@ export function Build_Function_GetRelativeFileKey() {
 		$${relative} = preg_replace('/\\.php$/i', '', $${relative});
 
 		return trim($${relative}, '.');
-	}`;
+	}`);
 }
 
 export function Build_Function_AesDecrypt() {
@@ -217,7 +218,7 @@ export function Build_Function_AesDecrypt() {
 	const encrypted = generateVariableName();
 	const payload = generateVariableName();
 	const plainText = generateVariableName();
-	return /* php */ `
+	return wrapPhpCode(/* php */ `
 	function ${symbols.aesDecrypt}($${encrypted}, $${payload}) {
 		$${plainText} = openssl_decrypt($${encrypted}, 'aes-256-gcm', substr($${payload}, 0, 32), OPENSSL_RAW_DATA, substr($${payload}, 32, 12), substr($${payload}, 44, 16));
 		if($${plainText} === false) {
@@ -225,7 +226,7 @@ export function Build_Function_AesDecrypt() {
 		}
 		
 		return json_decode($${plainText}, true);
-	}`;
+	}`);
 }
 
 export function Build_Function_FindBinariesDir() {
@@ -236,7 +237,7 @@ export function Build_Function_FindBinariesDir() {
 	const dir = generateVariableName();
 	const candidate = generateVariableName();
 
-	return /* php */ `
+	return wrapPhpCode(/* php */ `
 	function ${symbols.findBinariesDir}($${phpFile}) {
 		$${dir} = is_dir($${phpFile}) ? $${phpFile} : dirname($${phpFile});
 
@@ -250,7 +251,7 @@ export function Build_Function_FindBinariesDir() {
 		}
 
 		return '';
-	}`;
+	}`);
 }
 
 export function Build_Function_FileSeek() {
@@ -263,7 +264,7 @@ export function Build_Function_FileSeek() {
 
 	const fileOpen = generateVariableName();
 	const data = generateVariableName();
-	return /* php */ `
+	return wrapPhpCode(/* php */ `
 	function ${symbols.fileSeek}($${source}, $${offset} = 0, $${length} = 0) {
 		$${fileSize} = filesize($${source});
 		if ($${fileSize} === false || $${fileSize} === 0) {
@@ -274,7 +275,11 @@ export function Build_Function_FileSeek() {
 			$${offset} = $${fileSize} + $${offset};
 		}
 
-		if ($${offset} < 0 || $${offset} >= $${fileSize}) {
+		if ($${offset} < 0) {
+			return '';
+		}
+
+		if ($${offset} >= $${fileSize}) {
 			return '';
 		}
 
@@ -295,7 +300,7 @@ export function Build_Function_FileSeek() {
 		} finally {
 			fclose($${fileOpen});
 		}
-	}`;
+	}`);
 }
 
 export function Build_Function_Decrypt() {
@@ -308,7 +313,7 @@ export function Build_Function_Decrypt() {
 	const offset = generateVariableName();
 	const length = generateVariableName();
 
-	return /* php */ `
+	return wrapPhpCode(/* php */ `
 	function ${symbols.decrypt}(string $${source}, int $${offset} = 0, int $${length} = 0) {
 		static $${privateKey} = ${JSON.stringify(Runtime.privateKey)};
 
@@ -319,14 +324,13 @@ export function Build_Function_Decrypt() {
 			return '';
 		}
 		return ${symbols.aesDecrypt}(substr($${binary}, 256), substr($${payload}, -60));
-	}`;
+	}`);
 }
 
 export function Build_Function_ExtractFooter() {
 	const { symbols } = Runtime.options;
-	const { buildC } = Runtime;
-
-	const footer = createFooter();
+	const { Replacement } = BuildC;
+	const footer = BuildC.createFooter();
 
 	const phpFile = generateVariableName();
 	const binFile = generateVariableName();
@@ -334,7 +338,7 @@ export function Build_Function_ExtractFooter() {
 	const rawFooter = generateVariableName();
 	const footerArr = generateVariableName();
 
-	return /* php */ `
+	return wrapPhpCode(/* php */ `
 	function ${symbols.extractFooter}($${phpFile}) {
 		$${sourceDir} = ${buildSourceDirValue(phpFile)};
 		$${binFile} = ${buildBinFileValue(sourceDir)};
@@ -345,16 +349,16 @@ export function Build_Function_ExtractFooter() {
 		}
 
 		$${footerArr} = unpack('${footer.unpacker}', $${rawFooter});
-		if($${footerArr}['${buildC.KA_C_FOOTER_MAGIC_NAME}'] !== '${buildC.KA_C_FOOTER_MAGIC_STR}') {
+		if($${footerArr}['${Replacement.KA_C_FOOTER_MAGIC_NAME}'] !== '${Replacement.KA_C_FOOTER_MAGIC_STR}') {
 			throw new Exception('Invalid Data');
 		}
 		return $${footerArr};
-	}`;
+	}`);
 }
 
 export function Build_Function_getBinaryFileChunk() {
 	const { symbols, resource } = Runtime.options;
-	const { buildC } = Runtime;
+	const { Replacement } = BuildC;
 
 	const phpFile = generateVariableName();
 	const chunks = generateVariableName();
@@ -365,7 +369,7 @@ export function Build_Function_getBinaryFileChunk() {
 	const sub = generateVariableName();
 	const footerArr = generateVariableName();
 
-	return /* php */ `
+	return wrapPhpCode(/* php */ `
 	function ${symbols.getBinaryFileChunk}($${phpFile}, $${sub} = '') {
 		static $${chunks} = [];
 
@@ -381,7 +385,7 @@ export function Build_Function_getBinaryFileChunk() {
 		if (!array_key_exists($${runtimeKey} , $${chunks})) {
 			if ($${binFile} && is_file($${binFile})) {
 				$${footerArr} = ${symbols.extractFooter}($${phpFile});
-				$${chunks}[$${runtimeKey}] = ${symbols.decrypt}($${binFile}, $${footerArr}['${buildC.KA_C_FOOTER_CHUNKS_OFFSET_NAME}'], $${footerArr}['${buildC.KA_C_FOOTER_CHUNKS_LENGTH_NAME}']);
+				$${chunks}[$${runtimeKey}] = ${symbols.decrypt}($${binFile}, $${footerArr}['${Replacement.KA_C_FOOTER_CHUNKS_OFFSET_NAME}'], $${footerArr}['${Replacement.KA_C_FOOTER_CHUNKS_LENGTH_NAME}']);
 			} else {
 				$${chunks}[$${runtimeKey}] = [];
 			}
@@ -389,7 +393,7 @@ export function Build_Function_getBinaryFileChunk() {
 
 		$${chunkName} = ${symbols.getRelativeFileKey}($${phpFile}) . $${sub};
 		return $${chunks}[$${runtimeKey}][md5($${chunkName})] ?? [0, 0];
-	}`;
+	}`);
 }
 
 export function Build_Function_GetStringPool() {
@@ -401,7 +405,7 @@ export function Build_Function_GetStringPool() {
 	const offset = generateVariableName();
 	const length = generateVariableName();
 
-	return /* php */ `
+	return wrapPhpCode(/* php */ `
 	function ${symbols.getStringPool}() {
 		$${sourceDir} = ${buildSourceDirValue()};
 		$${binFile} = ${buildBinFileValue(sourceDir)};
@@ -414,7 +418,7 @@ export function Build_Function_GetStringPool() {
 		}
 
 		return $${contents};
-	}`;
+	}`);
 }
 
 export function Build_Function_GetPhpFile() {
@@ -434,7 +438,33 @@ export function Build_Function_GetPhpFile() {
 	const offset = generateVariableName();
 	const length = generateVariableName();
 
-	return /* php */ `
+	const process = generateVariableName();
+	const pipes = generateVariableName();
+
+	// /* php */ `
+	// $${process} = proc_open(
+	// 	'"' . $GLOBALS['${Runtime.options.runtimeDirName}'] . DIRECTORY_SEPARATOR . '${Replacement.KA_C_RUNTIME_EXE_NAME}${Replacement.KA_C_RUNTIME_EXE_FILETYPE}' . '"' . ' --write ' . $${prefix},
+	// 	[
+	// 		0 => ['pipe', 'r'],
+	// 		1 => ['pipe', 'w'],
+	// 		2 => ['pipe', 'w'],
+	// 	],
+	// 	$${pipes}
+	// );
+
+	// if (is_resource($${process})) {
+	// 	fwrite($${pipes}[0], $${contents});
+	// 	fclose($${pipes}[0]);
+
+	// 	$${tmpFile} = trim(stream_get_contents($${pipes}[1]));
+	// 	fclose($${pipes}[1]);
+
+	// 	fclose($${pipes}[2]);
+
+	// 	proc_close($${process});
+	// }
+	// `;
+	return wrapPhpCode(/* php */ `
 	function ${symbols.getPhpFile}(string $${phpFile}) {
 
 		$${fileKey} = ${symbols.getRelativeFileKey}($${phpFile});
@@ -447,11 +477,19 @@ export function Build_Function_GetPhpFile() {
 		$${contents} = ${symbols.decrypt}($${binFile}, $${offset}, $${length});
 
 		$${tmpFile} = ${symbols.createTempFile}($${contents}, $${prefix}, ${buildTempDir(sourceDir)});
-
 		$GLOBALS['${contextName}'] = $${phpFile};
 
+		${
+			Runtime.settings.debugRuntime
+				? ''
+				: /* php */ `
+			register_shutdown_function(function () use ($${tmpFile}) {
+				@unlink($${tmpFile});
+			});`
+		}
+
 		return $${tmpFile};
-	}`;
+	}`);
 }
 
 export async function Build_Include_Runtime(innerRuntime: string, dataPath: string) {
@@ -469,12 +507,12 @@ export async function Build_Include_Runtime(innerRuntime: string, dataPath: stri
 	const tmpFile = generateVariableName();
 	const contents = generateVariableName();
 
-	return /* php */ `
+	return wrapPhpCode(/* php */ `
 	$${binary} = file_get_contents(__DIR__ . '/${KA_RUNTIME_INNER_DATA}');
 	$${contents} = ${symbols.aesDecrypt}(substr($${binary}, 60), substr($${binary}, 0, 60));
 
 	$${tmpFile} = ${symbols.createTempFile}($${contents}, '', ${buildTempDir()});
-	include $${tmpFile};`;
+	include $${tmpFile};`);
 }
 
 export async function buildRuntimeFile(entryFilePath: string) {
@@ -524,12 +562,13 @@ export async function buildRuntimeFile(entryFilePath: string) {
 export async function buildRuntimeFileC(entryFilePath: string) {
 	if (!Runtime.isRuntimeEntry) return '';
 	const { resource } = Runtime.options;
+	const { Replacement } = BuildC;
+
 	const runtimeFile = path.resolve(path.dirname(entryFilePath), resource.KA_RUNTIME_DATA);
 	mkdirp.sync(path.dirname(runtimeFile));
 
 	// 外层的 runtime 定义基础的 Aes 解密和临时文件引用函数
-	let runtime = '<?php\n';
-	runtime += buildAutoUnlinkScript();
+	let runtime = buildAutoUnlinkScript();
 	// 解密的文件需要保存成临时文件引用
 	runtime += Build_Function_CreateTempFile();
 	// Aes 解密是不能进一步加密的第一个入口文件
@@ -552,22 +591,22 @@ export async function buildRuntimeFileC(entryFilePath: string) {
 	runtime += Build_Function_GetStringPool();
 
 	// const data = new TextEncoder().encode(runtime);
-	const aes = await aesEncrypt(runtime, true);
+	const aes = await aesEncrypt(stripPhpComments(runtime), true);
 
 	// fs.writeFileSync(runtimeFile, new Uint8Array(aes.data));
 
 	// 将 runtime 硬编码进 EXE
 	// if (BUILD_ARGS.INJECT_EXE) {
-	Runtime.buildC.KA_C_BINFILE = '';
-	Runtime.buildC.KA_C_AES_DATA_VALUE = toBufC(aes.data);
-	Runtime.buildC.KA_C_AES_DATA_LEN = aes.data.byteLength + '';
+	Replacement.KA_C_BINFILE = '';
+	Replacement.KA_C_AES_DATA_VALUE = BuildC.toBufC(aes.data);
+	Replacement.KA_C_AES_DATA_LEN = aes.data.byteLength + '';
 	// } else {
-	// Runtime.buildC.KA_C_BINFILE = path.basename(resource.KA_PHP_BINARIES);
-	// Runtime.buildC.KA_C_AES_DATA_LEN = '0';
+	// Replacement.KA_C_BINFILE = path.basename(resource.KA_PHP_BINARIES);
+	// Replacement.KA_C_AES_DATA_LEN = '0';
 
 	// 更新 chunks 记录
-	// Runtime.buildC.KA_C_RUMTIME_HEX = uuidv4(true);
-	// await updateChunks(Runtime.buildC.KA_C_RUMTIME_HEX, aes.data);
+	// Replacement.KA_C_RUMTIME_HEX = uuidv4(true);
+	// await updateChunks(Replacement.KA_C_RUMTIME_HEX, aes.data);
 	// }
 	// 原始随机密钥（不变）
 	const realKey = new Uint8Array(aes.payload.slice(0, 32));
@@ -586,26 +625,40 @@ export async function buildRuntimeFileC(entryFilePath: string) {
 	for (let i = 0; i < 12; i++) obfIv[i] = realIv[i] ^ xorMaskIv[i];
 	for (let i = 0; i < 16; i++) obfTag[i] = realTag[i] ^ xorMaskTag[i];
 
-	Runtime.buildC.KA_C_AES_KEY = toBufC(obfKey.buffer);
-	Runtime.buildC.KA_C_AES_IV = toBufC(obfIv.buffer);
-	Runtime.buildC.KA_C_AES_TAG = toBufC(obfTag.buffer);
-	Runtime.buildC.KA_C_AES_MASK_KEY = toBufC(xorMaskKey.buffer);
-	Runtime.buildC.KA_C_AES_MASK_IV = toBufC(xorMaskIv.buffer);
-	Runtime.buildC.KA_C_AES_MASK_TAG = toBufC(xorMaskTag.buffer);
+	Replacement.KA_C_AES_KEY = BuildC.toBufC(obfKey.buffer);
+	Replacement.KA_C_AES_IV = BuildC.toBufC(obfIv.buffer);
+	Replacement.KA_C_AES_TAG = BuildC.toBufC(obfTag.buffer);
+	Replacement.KA_C_AES_MASK_KEY = BuildC.toBufC(xorMaskKey.buffer);
+	Replacement.KA_C_AES_MASK_IV = BuildC.toBufC(xorMaskIv.buffer);
+	Replacement.KA_C_AES_MASK_TAG = BuildC.toBufC(xorMaskTag.buffer);
 
-	const cPath = path.resolve(
-		path.dirname(runtimeFile),
-		Runtime.buildC.KA_C_RUNTIME_EXE_NAME + Runtime.buildC.KA_C_RUNTIME_EXE_FILETYPE,
-	);
-	await buildC(path.resolve(path.dirname(runtimeFile), cPath));
+	Replacement.KA_C_RUNTIME_DIR_NAME = Runtime.options.runtimeDirName;
+	Replacement.KA_C_TEMP_PREFIX_STR = '';
+	Replacement.KA_C_TEMP_PREFIX_LEN = Replacement.KA_C_TEMP_PREFIX_STR.length + '';
 
-	// 记录 exe 路径
-	Runtime.buildC.KA_C_RUMTIME_PATH = cPath;
+	const cName = Replacement.KA_C_RUNTIME_EXE_NAME;
+
+	if (!BUILD_ARGS.url) {
+		throw new Error('Remote BuildC url is required');
+	}
+	const zipPath = await BuildC.buildRemote(cName, BUILD_ARGS.url);
+
+	// 解压编译的程序到目标文件夹
+	await extractArchive(zipPath, path.dirname(runtimeFile));
+
+	for (const file of await fsp.readdir(path.dirname(runtimeFile))) {
+		if (file.includes(cName)) {
+			// 记录 exe 路径
+			Replacement.KA_C_RUMTIME_PATH = path.resolve(path.dirname(runtimeFile), file);
+			Replacement.KA_C_RUNTIME_EXE_FILETYPE = path.extname(file);
+		}
+	}
+
+	await fsp.unlink(zipPath);
 
 	const output = generateVariableName();
-
 	return /* php */ `
-		exec(escapeshellarg(__DIR__ . '/${resource.KA_BINARIES_DIR}/${Runtime.buildC.KA_C_RUNTIME_EXE_NAME}${Runtime.buildC.KA_C_RUNTIME_EXE_FILETYPE}') . ' 2>' . (PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null'), $${output});
+		exec(escapeshellarg(__DIR__ . '/${resource.KA_BINARIES_DIR}/${Replacement.KA_C_RUNTIME_EXE_NAME}${Replacement.KA_C_RUNTIME_EXE_FILETYPE}') . ' 2>' . (PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null'), $${output});
 		include (trim($${output}[0] ?? ''));
 	`;
 }
@@ -708,7 +761,7 @@ export async function mergeChunks(targetBinFile: string) {
 }
 
 export async function appendChunksToBinFile() {
-	const { KA_C_RUMTIME_HEX } = Runtime.buildC;
+	const { Replacement } = BuildC;
 
 	// 获取新的信息
 	const { binFile, chunkRecordFile, chunkRecord, chunkBuffer } = await getChunksRecord();
@@ -717,14 +770,14 @@ export async function appendChunksToBinFile() {
 
 	const binFileBuffer = await fsp.readFile(binFile);
 
-	const chunkName = md5(KA_C_RUMTIME_HEX);
+	const chunkName = md5(Replacement.KA_C_RUMTIME_HEX);
 	const [runtimeOffset, runtimeLength] = chunkRecord[chunkName] ?? [0, 0];
 
 	// 1. 从 binaryFile(exe) 中精确读取 runtime 区段用于 CRC
 	const runtimeBuffer = binFileBuffer.buffer.slice(runtimeOffset, runtimeOffset + runtimeLength);
 
 	// 构建 64 字节 Footer
-	const footer = createFooter(
+	const footer = BuildC.createFooter(
 		runtimeOffset,
 		runtimeLength,
 		// Chunks Offset
@@ -759,7 +812,7 @@ export async function checkBinaryData() {
 		KA_C_FOOTER_RUNTIME_LENGTH_NAME,
 		KA_C_FOOTER_CHUNKS_OFFSET_NAME,
 		KA_C_FOOTER_CHUNKS_LENGTH_NAME,
-	} = Runtime.buildC;
+	} = BuildC.Replacement;
 
 	const binFile = Runtime.runtimeDir
 		? path.resolve(Runtime.distRoot, Runtime.runtimeDir, resource.KA_PHP_BINARIES)
@@ -767,7 +820,7 @@ export async function checkBinaryData() {
 
 	const binFileBuffer = await fsp.readFile(binFile);
 
-	const footer = createFooter();
+	const footer = BuildC.createFooter();
 
 	const result = footer.unpack(Buffer.from(binFileBuffer.buffer.slice(-footer.size)));
 	console.log({ result });
@@ -780,7 +833,7 @@ export async function checkBinaryData() {
 	if (runtime.byteLength > 0) {
 		console.log('\nAesDecrypt runtime checkBinaryData');
 		try {
-			const payload = toBuf([KA_C_AES_KEY, KA_C_AES_IV, KA_C_AES_TAG].join(', '));
+			const payload = BuildC.toBuf([KA_C_AES_KEY, KA_C_AES_IV, KA_C_AES_TAG].join(', '));
 			await aesDecrypt(runtime, payload);
 			console.log('AesDecrypt runtime Success\n');
 		} catch (e) {
@@ -804,8 +857,8 @@ export async function checkBinaryData() {
 
 export async function mergeAllBinaries() {
 	// 创建 exe 入口时，合并 binaryFile 到 exe
-	if (Runtime.settings.buildRuntimeC && BUILD_ARGS.INJECT_EXE) {
-		const { KA_C_RUMTIME_PATH } = Runtime.buildC;
+	if (Runtime.settings.injectExe) {
+		const { KA_C_RUMTIME_PATH } = BuildC.Replacement;
 
 		if (!fs.existsSync(KA_C_RUMTIME_PATH)) return;
 		// 将 binaryFile 合并追加到 RuntimeExe 尾部
@@ -828,6 +881,11 @@ export function buildSourceDirValue(phpFile?: string) {
 
 export function buildBinFileValue(sourceDir: string) {
 	const { resource } = Runtime.options;
+	const { Replacement } = BuildC;
+
+	if (Runtime.settings.injectExe) {
+		return /* php */ `$GLOBALS['${Runtime.options.runtimeDirName}'] . DIRECTORY_SEPARATOR . '${Replacement.KA_C_RUNTIME_EXE_NAME}${Replacement.KA_C_RUNTIME_EXE_FILETYPE}'`;
+	}
 	if (Runtime.runtimeDir) {
 		return /* php */ `realpath(ABSPATH . DIRECTORY_SEPARATOR . '${Runtime.runtimeDir}' . DIRECTORY_SEPARATOR . '${resource.KA_PHP_BINARIES}')`;
 	}
@@ -839,11 +897,12 @@ export function buildAutoUnlinkScript() {
 		return '';
 	}
 
+	const thePhpFile = generateVariableName();
 	const code = /* php */ `
-	$thePhpFile = __FILE__;
-	@unlink($thePhpFile);
-	register_shutdown_function(function () {
-		@unlink($thePhpFile);
+	$${thePhpFile} = __FILE__;
+	@unlink($${thePhpFile});
+	register_shutdown_function(function () use ($${thePhpFile}) {
+		@unlink($${thePhpFile});
 	});`;
 
 	return '<?php ' + code + ' ?>\n';
@@ -855,6 +914,12 @@ export function buildTempDir(source: string = '') {
 		return /* php */ `${dir} . '/${Runtime.options.resource.KA_BINARIES_DIR}/${Runtime.tempDir}'`;
 	}
 	return /* php */ `sys_get_temp_dir() . '/${Runtime.tempDir}'`;
+}
+
+export function wrapPhpCode(code: string) {
+	return `<?php
+	${code}
+	?>`;
 }
 
 export * as default from './pipeUtil';

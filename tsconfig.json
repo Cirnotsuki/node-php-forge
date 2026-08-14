@@ -5,6 +5,6 @@
 		"moduleResolution": "bundler",
 		"strict": true
 	},
-	"include": ["**/*"],
+	"include": ["**/*", "../ka-utils/src/lib/run-file.ts", "../ka-buildc/deps", "../ka-buildc/src/core/footerBuffer.ts"],
 	"exclude": ["node_modules", "dist"]
 }

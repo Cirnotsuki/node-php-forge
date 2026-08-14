@@ -5,7 +5,7 @@ import { mkdirp } from 'mkdirp';
 
 import logger from '../utils/logger';
 import { Runtime } from '../core/runtime';
-import { BUILD_ARGS, MAP_DIR } from '../config/constans';
+import { MAP_DIR } from '../config/constans';
 import { BuildContext, BuildOption } from '../core/buildOption';
 import { normalizePath } from '../utils/utils';
 import { RecordBase } from '../core/recordNode';
@@ -14,6 +14,8 @@ import { generateVariableName, getNodeName, toPhpBinary } from '../utils/helper'
 
 import config from '../../config';
 import { mergeAllBinaries } from '../utils/pipeUtil';
+
+import { BuildC } from '../../../ka-buildc/src';
 
 export default async function (
 	buildDirs: string[],
@@ -44,16 +46,22 @@ export default async function (
 	}
 
 	if (Runtime.settings.buildRuntimeC) {
-		Runtime.buildC.KA_C_TEMPDIR = Runtime.settings.debugRuntime ? 'temp' : 'KA_TEMP';
-		Runtime.buildC.KA_C_TEMP_FILETYPE = Runtime.settings.debugRuntime ? '.php' : '.tmp';
-		Runtime.buildC.KA_C_RUNTIME_EXE_FILETYPE =
-			BUILD_ARGS.PLAT.toLowerCase() === 'win32' ? '.exe' : '';
-		Runtime.buildC.KA_C_RUNTIME_EXE_NAME = Runtime.settings.debugRuntime
+		BuildC.Replacement.KA_C_FOOTER_MAGIC_NAME = generateVariableName();
+
+		BuildC.Replacement.KA_C_FOOTER_RUNTIME_OFFSET_NAME = generateVariableName();
+		BuildC.Replacement.KA_C_FOOTER_RUNTIME_LENGTH_NAME = generateVariableName();
+
+		BuildC.Replacement.KA_C_FOOTER_CHUNKS_OFFSET_NAME = generateVariableName();
+		BuildC.Replacement.KA_C_FOOTER_CHUNKS_LENGTH_NAME = generateVariableName();
+		BuildC.Replacement.KA_C_TEMPDIR = Runtime.settings.debugRuntime ? 'temp' : 'KA_TEMP';
+		BuildC.Replacement.KA_C_TEMP_FILETYPE = Runtime.settings.debugRuntime ? '.php' : '.tmp';
+		BuildC.Replacement.KA_C_RUNTIME_EXE_NAME = Runtime.settings.debugRuntime
 			? 'runtime'
 			: generateVariableName();
-		Runtime.buildC.KA_C_TEMP_ROOT = Runtime.settings.debugRuntime ? 'exe_dir' : 'temp_root';
-		Runtime.buildC.KA_C_RUNTIME_IN_SELF_VALUE = `${Number(BUILD_ARGS.INJECT_EXE)}`;
-		Runtime.buildC.KA_C_RUNTIME_DEBUG_VALUE = `${Number(Runtime.settings.debugRuntime)}`;
+
+		BuildC.Replacement.KA_C_RUNTIME_DEBUG_VALUE = `${Number(Runtime.settings.debugRuntime)}`;
+	} else {
+		Runtime.settings.injectExe = false;
 	}
 
 	Runtime.options = buildOption;

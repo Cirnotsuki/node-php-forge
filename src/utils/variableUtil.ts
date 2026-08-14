@@ -47,7 +47,7 @@ export function getValueType(node: AnyAstNode) {
 	if (isKind(node, 'propertylookup')) {
 		const classType = getValueType(node.what);
 		const offsetName = getNodeName(node.offset);
-		const cache = Runtime.options.classes.get(classType);
+		// const cache = Runtime.options.classes.get(classType);
 		// if(cache?.properties(offsetName))
 	}
 	if (['encapsed', 'string'].includes(node.kind)) {

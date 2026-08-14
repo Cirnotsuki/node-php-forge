@@ -96,32 +96,7 @@ export const EXTERNAL = [...config.external];
 export const ENTRIES = [...config.entries];
 
 export const BUILD_ARGS = {
-	VERSION: config.build?.version || 1,
-	MAGIC: config.build?.magic || 'CHNK',
-	FOOTER_SIZE: config.build?.footerSize || 64,
-	PLAT: config.build?.platform || 'win32',
-	INJECT_EXE: Boolean(config.build?.injectExe),
-};
-
-export const DEPS = {
-	cache: path.resolve(ROOT_DIR, './.cache'),
-	location: config.deps?.location || path.resolve(ROOT_DIR, './deps'),
-
-	openssl: {
-		location: config.deps?.openssl?.location || '',
-		lib: config.deps?.openssl?.lib || '',
-		include: config.deps?.openssl?.include || '',
-		sslDll: config.deps?.openssl?.sslDll || '',
-		cryptoDll: config.deps?.openssl?.cryptoDll || '',
-	},
-
-	zigCC: {
-		version: config.deps?.zigCC?.version || '0.16.0',
-		location: config.deps?.zigCC?.location || '',
-
-		hash: {
-			win32: config.deps?.zigCC?.hash?.win32 || '',
-			linux: config.deps?.zigCC?.hash?.linux || '',
-		},
-	},
+	url: config.build?.url || '',
+	magic: config.build?.magic || 'CHNK',
+	footerSize: config.build?.footerSize || 64,
 };

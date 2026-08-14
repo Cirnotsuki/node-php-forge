@@ -22,6 +22,8 @@ import config from '../config';
 
 export * as PhpParser from 'php-parser';
 
+export * from '../../ka-buildc/src'
+
 export default async function (entryDir: string, distDir: string, options: BuildOption) {
 	const buildContext = new BuildContext(options, entryDir, distDir);
 
