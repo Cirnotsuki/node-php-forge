@@ -22,7 +22,7 @@ import config from '../config';
 
 export * as PhpParser from 'php-parser';
 
-export * from '../../ka-buildc/src'
+export * from '../../ka-buildc/src';
 
 export default async function (entryDir: string, distDir: string, options: BuildOption) {
 	const buildContext = new BuildContext(options, entryDir, distDir);
@@ -31,7 +31,7 @@ export default async function (entryDir: string, distDir: string, options: Build
 	// set root
 	Runtime.distDir = buildContext.distDir;
 	Runtime.sourceDir = buildContext.entryDir;
-	
+
 	const { settings } = Runtime;
 	try {
 		fs.rmSync(buildContext.distDir, { recursive: true, force: true });
@@ -56,10 +56,8 @@ export default async function (entryDir: string, distDir: string, options: Build
 		Runtime.period = 'finnally';
 		await phpFinnally(buildContext);
 
-		if (settings.strings) {
-			Runtime.period = 'string';
-			await phpStringAst(buildContext);
-		}
+		Runtime.period = 'string';
+		await phpStringAst(buildContext);
 
 		Runtime.period = 'optimize';
 		await phpOptimize(buildContext);

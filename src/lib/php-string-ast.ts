@@ -94,6 +94,15 @@ export default async function (buildContext: BuildContext) {
 		return false;
 	}
 
+	function replaceStringValue(value: string) {
+		for (const [source, replace] of Object.entries(Runtime.options.replace)) {
+			if (value.includes(source)) {
+				return value.replace(source, replace);
+			}
+		}
+		return value;
+	}
+
 	// ========================================
 	// Collect Strings (Phase 1)
 	// ========================================
@@ -138,8 +147,9 @@ export default async function (buildContext: BuildContext) {
 		extractEncapsed(node, ({ isString, raw }) => {
 			if (isString) {
 				if (raw.length < MIN_STRING_LENGTH) return;
-				if (stringMap.has(raw)) return;
-				stringMap.set(raw, getRandomID());
+				const value = replaceStringValue(raw);
+				if (stringMap.has(value)) return;
+				stringMap.set(value, getRandomID());
 			}
 		});
 	}
@@ -148,17 +158,14 @@ export default async function (buildContext: BuildContext) {
 		if (nodeInEncapsed(node)) return;
 		if (shouldSkipNode(node)) return;
 
-		const value = extractStringValue(node);
+		let value = extractStringValue(node);
 		if (value === null) return;
+		value = replaceStringValue(value);
 
 		if (shouldSkipString(value)) return;
 		if (stringMap.has(value)) return;
 
-		if (value in Runtime.options.replace) {
-			stringMap.set(Runtime.options.replace[value], getRandomID());
-		} else {
-			stringMap.set(value, getRandomID());
-		}
+		stringMap.set(value, getRandomID());
 	}
 
 	// ========================================
@@ -167,34 +174,54 @@ export default async function (buildContext: BuildContext) {
 
 	function recordEncapsed(node: AstNode<AstNodeMap['encapsed']>) {
 		const result: string[] = [];
+		const replace: [string, string][] = [];
 
 		extractEncapsed(node, ({ isString, raw }) => {
 			if (isString) {
 				if (raw.length < MIN_STRING_LENGTH) {
 					result.push(`'${raw}'`);
 				} else {
-					const id = stringMap.get(raw)!;
-					result.push(`${runtimeFunctionName}(${id})`);
+					const value = replaceStringValue(raw);
+					if (Runtime.settings.strings) {
+						const id = stringMap.get(value)!;
+						result.push(`${runtimeFunctionName}(${id})`);
+					} else if (value !== raw) {
+						replace.push([raw, value]);
+					}
 				}
 			} else {
 				result.push(raw.replace(/^{/, '').replace(/}$/, ''));
 			}
 		});
 
-		if (result.length === 0) return;
-		node.recordReplacement(result.join('.'));
+		if (Runtime.settings.strings) {
+			if (result.length === 0) return;
+			node.recordReplacement(result.join('.'));
+		} else if (replace.length > 0) {
+			let raw = node.raw;
+			for (const [source, value] of replace) {
+				raw = raw.replaceAll(source, value);
+			}
+			node.recordReplacement(raw);
+		}
 	}
 
 	function recordString(node: AstNode<AstNodeMap['string']>) {
 		if (nodeInEncapsed(node)) return;
 
-		const value = extractStringValue(node);
-		if (value === null) return;
+		const source = extractStringValue(node);
+		if (source === null) return;
+		const value = replaceStringValue(source);
+
 		if (!stringMap.has(value)) return;
 		if (!node.loc?.start?.offset || !node.loc?.end?.offset) return;
 
-		const id = stringMap.get(value)!;
-		node.recordReplacement(`${runtimeFunctionName}(${id})`);
+		if (Runtime.settings.strings) {
+			const id = stringMap.get(value)!;
+			node.recordReplacement(`${runtimeFunctionName}(${id})`);
+		} else if (value !== source) {
+			node.recordReplacement(node.raw.replace(source, value));
+		}
 	}
 
 	// ========================================
@@ -237,7 +264,6 @@ export default async function (buildContext: BuildContext) {
 		logger.log(`🔄 开始替换字符串: ${normalizePath(path.relative(Runtime.distRoot, file))}`);
 
 		const ast = Ast.create(file);
-
 		ast.walk((node) => {
 			if (!isKind(node, 'string') && !isKind(node, 'encapsed')) return;
 			if (isCompileTimeContext(node)) return;

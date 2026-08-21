@@ -650,7 +650,6 @@ export async function buildRuntimeFileC(entryFilePath: string) {
 		if (file.includes(cName)) {
 			// 记录 exe 路径
 			Replacement.KA_C_RUMTIME_PATH = path.resolve(path.dirname(runtimeFile), file);
-			Replacement.KA_C_RUNTIME_EXE_FILETYPE = path.extname(file);
 		}
 	}
 

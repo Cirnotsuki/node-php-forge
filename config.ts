@@ -4,6 +4,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const PROTOCAL = 'http';
+const ASSETS_IP = '114.132.229.184';
+const ASSETS_PORT = '5000';
+
 export default {
 	debug: false,
 	phpFileEncrypt: true,
@@ -11,7 +15,7 @@ export default {
 
 	prefix: 'KA_',
 
-	rootDir: path.resolve('./'),
+	rootDir: __dirname,
 	randomNumberSize: 2,
 
 	excludes: ['vendor', 'node_modules', '.git', 'languages'],
@@ -38,7 +42,7 @@ export default {
 	copyFiles: ['./wp-config.php', './.htaccess'],
 
 	replace: {
-		'http://localhost:5000/': 'http://114.132.229.184:5000/',
+		'http://localhost:5000/': `${PROTOCAL}://${ASSETS_IP}:${ASSETS_PORT}/`,
 	},
 
 	db: {
@@ -55,7 +59,7 @@ export default {
 		functions: true,
 		classes: true,
 		encrypt: true,
-		debugRuntime: true,
+		debugRuntime: false,
 		buildRuntimeC: true,
 		injectExe: true,
 	},
@@ -63,6 +67,10 @@ export default {
 	build: {
 		magic: 'CHNK',
 		footerSize: 64,
-		url: 'http://198.18.0.1:2000/build',
+		platform: 'linux',
+		url: {
+			win32: 'http://localhost:2000/build',
+			linux: 'http://192.168.0.166:2000/build',
+		},
 	},
 };

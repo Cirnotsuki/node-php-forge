@@ -10,7 +10,6 @@ import logger from '../utils/logger';
 import { mkdirp } from 'mkdirp';
 import config from '../../config';
 import { uuidv4 } from '@ka-libs/crypto';
-import { randomPrefix } from '../utils/randomPrefix';
 import { isKind, isScopeNode } from '../utils/typeGard';
 import { VARIABLE_OPT } from '../config/constans';
 import { RecordBase, RecordFunction, RecordVariable } from './recordNode';

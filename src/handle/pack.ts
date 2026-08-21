@@ -1,7 +1,7 @@
 import { path7za } from '7zip-bin';
 import path from 'path';
 import fs from 'fs/promises';
-import { runFile } from '@ka-libs/utils/';
+import { runFile } from '@ka-libs/utils';
 import { mkdirp } from 'mkdirp';
 
 interface PackOptions {

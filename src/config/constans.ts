@@ -95,8 +95,10 @@ export const EXCLUDE_STRING = [...config.excludeString, 'ABSPATH', 'SHORTINIT'];
 export const EXTERNAL = [...config.external];
 export const ENTRIES = [...config.entries];
 
+const platform = config.build?.platform || 'win32';
 export const BUILD_ARGS = {
-	url: config.build?.url || '',
+	url: ((config.build?.url || {}) as Record<string, string>)[platform] || '',
 	magic: config.build?.magic || 'CHNK',
 	footerSize: config.build?.footerSize || 64,
+	platform,
 };

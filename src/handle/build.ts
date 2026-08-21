@@ -5,7 +5,7 @@ import { mkdirp } from 'mkdirp';
 
 import logger from '../utils/logger';
 import { Runtime } from '../core/runtime';
-import { MAP_DIR } from '../config/constans';
+import { BUILD_ARGS, MAP_DIR } from '../config/constans';
 import { BuildContext, BuildOption } from '../core/buildOption';
 import { normalizePath } from '../utils/utils';
 import { RecordBase } from '../core/recordNode';
@@ -47,18 +47,20 @@ export default async function (
 
 	if (Runtime.settings.buildRuntimeC) {
 		BuildC.Replacement.KA_C_FOOTER_MAGIC_NAME = generateVariableName();
-
+		BuildC.Replacement.KA_C_FOOTER_MAGIC_STR = BUILD_ARGS.magic;
+		BuildC.Replacement.KA_C_FOOTER_SIZE = BUILD_ARGS.footerSize + '';
 		BuildC.Replacement.KA_C_FOOTER_RUNTIME_OFFSET_NAME = generateVariableName();
 		BuildC.Replacement.KA_C_FOOTER_RUNTIME_LENGTH_NAME = generateVariableName();
-
 		BuildC.Replacement.KA_C_FOOTER_CHUNKS_OFFSET_NAME = generateVariableName();
 		BuildC.Replacement.KA_C_FOOTER_CHUNKS_LENGTH_NAME = generateVariableName();
+		
 		BuildC.Replacement.KA_C_TEMPDIR = Runtime.settings.debugRuntime ? 'temp' : 'KA_TEMP';
 		BuildC.Replacement.KA_C_TEMP_FILETYPE = Runtime.settings.debugRuntime ? '.php' : '.tmp';
 		BuildC.Replacement.KA_C_RUNTIME_EXE_NAME = Runtime.settings.debugRuntime
 			? 'runtime'
 			: generateVariableName();
 
+		BuildC.Replacement.KA_C_RUNTIME_EXE_FILETYPE = BUILD_ARGS.platform === 'win32' ? '.exe' : '';
 		BuildC.Replacement.KA_C_RUNTIME_DEBUG_VALUE = `${Number(Runtime.settings.debugRuntime)}`;
 	} else {
 		Runtime.settings.injectExe = false;

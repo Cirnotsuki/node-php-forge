@@ -67,6 +67,14 @@ export class BuildOption {
 		const fileType = opt.fileType || '.dat';
 		const binariesDir = opt.binariesDir || 'binaries';
 
+		if (opt.replace) {
+			this.replace = {
+				...this.replace,
+				...opt.replace,
+				// 'http://localhost:5000/': 'http://114.132.229.184:5000/',
+			};
+		}
+
 		this.resource = {
 			KA_BINARIES_DIR: binariesDir,
 			KA_RUMTIME_KEY: generateConstantName().toUpperCase(),

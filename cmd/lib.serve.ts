@@ -1,4 +1,5 @@
 import type ConfigType from '../config';
+import { Runtime } from '../src/core/runtime';
 
 import build from '../src/handle/build';
 import copy from '../src/handle/copy';
@@ -28,11 +29,11 @@ export default function (config: typeof ConfigType) {
 				case 'DB_HOST':
 					return `define('${name}', '${db.host}');`;
 				case 'WP_DEBUG':
-					return `define('${name}', false);`;
+					return `define('${name}', ${Runtime.settings.debugRuntime});`;
 				case 'WP_DEBUG_LOG':
-					return `define('${name}', false);`;
+					return `define('${name}', ${Runtime.settings.debugRuntime});`;
 				case 'WP_DEBUG_DISPLAY':
-					return `define('${name}', false);`;
+					return `define('${name}', ${Runtime.settings.debugRuntime});`;
 				default:
 					return _line;
 			}
